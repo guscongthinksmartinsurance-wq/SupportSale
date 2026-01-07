@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
+# --- 1. CẤU HÌNH (DÙNG JSON CỦA ANH) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -42,37 +42,38 @@ info = {
   "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
 }
 
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 client = gspread.authorize(creds)
 
-# --- 2. HÀM TẢI DỮ LIỆU THÔNG MINH (CHỐNG API ERROR) ---
-def sync_data():
-    sh = client.open_by_url(SPREADSHEET_URL)
-    worksheet = sh.get_worksheet(0)
-    data = worksheet.get_all_records()
-    df = pd.DataFrame(data)
-    df.columns = [str(col).strip() for col in df.columns]
-    st.session_state['df'] = df
-    st.session_state['worksheet'] = worksheet
+# --- 2. HÀM TẢI DỮ LIỆU CỰC KỲ AN TOÀN ---
+@st.cache_resource # Dùng cache_resource để giữ kết nối không bị khởi tạo lại
+def get_gsheet_client():
+    return gspread.authorize(creds)
 
-# Khởi tạo dữ liệu lần đầu tiên
-if 'df' not in st.session_state:
-    sync_data()
+def load_data_from_google():
+    gc = get_gsheet_client()
+    sh = gc.open_by_url(SPREADSHEET_URL)
+    ws = sh.get_worksheet(0)
+    df = pd.DataFrame(ws.get_all_records())
+    df.columns = [str(col).strip() for col in df.columns]
+    return df, ws
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Nút Refresh thủ công
-if st.button("🔄 Đồng bộ lại dữ liệu (Sync Now)"):
-    sync_data()
-    st.rerun()
+# Khởi tạo session state để tránh load lại khi chỉnh slider
+if 'df' not in st.session_state:
+    with st.spinner('Đang kết nối dữ liệu an toàn...'):
+        df_load, ws_load = load_data_from_google()
+        st.session_state.df = df_load
+        st.session_state.ws = ws_load
 
-df = st.session_state['df']
-ws = st.session_state['worksheet']
+df = st.session_state.df
+ws = st.session_state.ws
 
-# Sidebar: Thêm khách
+# SideBar: Thêm khách
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng")
     n_name = st.text_input("Name KH")
@@ -80,23 +81,28 @@ with st.sidebar:
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     if st.button("Lưu khách hàng"):
         ws.append_row([n_name, "", n_cell, "", n_status, "", ""])
-        sync_data() # Tải lại sau khi thêm
-        st.success("Đã thêm!")
-        st.rerun()
+        st.success("Đã thêm! Hãy nhấn 'Refresh' để cập nhật.")
 
-# Bộ lọc (Chạy trên RAM, không gọi API Google)
-st.subheader("🔍 Bộ lọc")
-c_s1, c_s2 = st.columns([2, 1])
+# Thanh trượt lọc
+st.subheader("🔍 Bộ lọc thông minh")
+c_s1, c_s2, c_refresh = st.columns([2, 1, 1])
 with c_s1:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_s2:
     status_sel = st.multiselect("Lọc trạng thái:", df['Status'].unique(), default=df['Status'].unique())
+with c_refresh:
+    if st.button("🔄 Refresh Data"):
+        del st.session_state.df # Xóa để load lại
+        st.rerun()
 
+# Logic lọc (Chạy local trên RAM máy tính)
 df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_filtered = df[mask & df['Status'].isin(status_sel)]
 
-# Danh sách hiển thị
+st.subheader(f"📋 Danh sách ({len(df_filtered)} khách)")
+
+# --- HIỂN THỊ DANH SÁCH ---
 for index, row in df_filtered.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
@@ -104,21 +110,25 @@ for index, row in df_filtered.iterrows():
         with col_info:
             tag = "🟢 NEW" if pd.isna(row['Last_Interact_DT']) else ""
             st.markdown(f"**{row['Name KH']}** {tag}")
-            st.caption(f"📞 {row['Cellphone']} | {row['Status']}")
+            st.caption(f"📞 {row['Cellphone']}")
 
         p = str(row['Cellphone']).strip()
         name_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-        # --- NÚT BẤM DÙNG MARKDOWN (ỔN ĐỊNH NHẤT) ---
-        col_call.markdown(f"### [:green[📞 GỌI]](rcapp://call?number={p})")
-        col_sms.markdown(f"### [:blue[💬 SMS]](rcapp://sms?number={p}&body={m_enc})")
-        col_mail.markdown(f"### [:orange[📧 MAIL]](mailto:?subject=TMC&body={m_enc})")
-        col_cal.markdown(f"### [:red[📅 HẸN]](https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc})")
+        # --- NÚT GỌI/SMS ĐƯỢC FIX LỖI BẰNG HTML TAG THUẦN ---
+        # Đây là cách duy nhất để trình duyệt thấy link và cho phép mở App
+        col_call.markdown(f'<a href="rcapp://call?number={p}" target="_blank" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
+        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
+        col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:8px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
+        
+        gcal_link = f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc}"
+        col_cal.markdown(f'<a href="{gcal_link}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:8px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
-        if col_done.button("Xong", key=f"done_{index}"):
+        if col_done.button("Xong", key=f"d_{index}"):
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             ws.update_cell(index + 2, 6, now_str)
-            sync_data() # Chỉ gọi API khi nhấn Xong
-            st.rerun()
+            st.info("Đã cập nhật lên Sheets. Hãy nhấn Refresh để tải lại.")
         st.divider()
+
+st.video("https://youtu.be/HHfsKefOwA4")
