@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH KẾT NỐI ---
+# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -46,27 +46,28 @@ SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DV
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 client = gspread.authorize(creds)
 
-# Dùng Cache để không làm phiền Google quá nhiều
-@st.cache_data(ttl=300) 
-def get_data_from_google():
+# --- 2. HÀM TẢI DỮ LIỆU (CÓ CACHE ĐỂ FIX LỖI API) ---
+@st.cache_data(ttl=600) # Lưu dữ liệu 10 phút để tránh lỗi Google chặn
+def get_data():
     sh = client.open_by_url(SPREADSHEET_URL)
     worksheet = sh.get_worksheet(0)
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
     df.columns = [str(col).strip() for col in df.columns]
-    return df
+    return df, worksheet
 
-# --- GIAO DIỆN ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-if st.button("🔄 Làm mới dữ liệu (Refresh)"):
+# Nút Refresh thủ công
+if st.button("🔄 Cập nhật dữ liệu từ Google Sheets"):
     st.cache_data.clear()
     st.rerun()
 
-df = get_data_from_google()
+df, ws = get_data()
 
-# SIDEBAR: THÊM KHÁCH
+# SIDEBAR: THÊM KHÁCH MỚI
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng")
     n_name = st.text_input("Name KH")
@@ -75,49 +76,56 @@ with st.sidebar:
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     
     if st.button("Lưu khách hàng"):
-        sh = client.open_by_url(SPREADSHEET_URL)
-        ws = sh.get_worksheet(0)
         ws.append_row([n_name, n_id, n_cell, "", n_status, "", ""])
         st.cache_data.clear()
-        st.success("Đã thêm!")
+        st.success("Đã thêm khách mới!")
         st.rerun()
 
-# BỘ LỌC
-st.subheader("🔍 Bộ lọc")
-c_s1, c_s2 = st.columns([2, 1])
-with c_s1:
-    days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
-with c_s2:
-    status_sel = st.multiselect("Trạng thái:", df['Status'].unique(), default=df['Status'].unique())
+if not df.empty:
+    # BỘ LỌC THANH TRƯỢT
+    st.subheader("🔍 Bộ lọc")
+    c_s1, c_s2 = st.columns([2, 1])
+    with c_s1:
+        days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
+    with c_s2:
+        status_sel = st.multiselect("Trạng thái:", df['Status'].unique(), default=df['Status'].unique())
 
-df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
-mask = (df['Last_Interact'].isna()) | ((datetime.now() - df['Last_Interact']).dt.days >= days)
-df_display = df[mask & df['Status'].isin(status_sel)]
+    df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
+    mask = (df['Last_Interact'].isna()) | ((datetime.now() - df['Last_Interact']).dt.days >= days)
+    df_display = df[mask & df['Status'].isin(status_sel)]
 
-# HIỂN THỊ
-for index, row in df_display.iterrows():
-    with st.container():
-        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
-        
-        with col_info:
-            tag = "🟢 NEW" if pd.isna(row['Last_Interact']) else ""
-            st.markdown(f"**{row['Name KH']}** {tag}")
-            st.caption(f"📞 {row['Cellphone']}")
+    st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-        phone = str(row['Cellphone']).strip()
-        name_enc = urllib.parse.quote(str(row['Name KH']))
-        msg = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
+    for index, row in df_display.iterrows():
+        with st.container():
+            col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
+            
+            with col_info:
+                st.write(f"**{row['Name KH']}**")
+                st.caption(f"📞 {row['Cellphone']}")
 
-        # NÚT HÀNH ĐỘNG (Dùng Markdown Link giả lập Button)
-        col_call.markdown(f'[:green[📞 GỌI]](rcapp://call?number={phone})')
-        col_sms.markdown(f'[:blue[💬 SMS]](rcapp://sms?number={phone}&body={msg})')
-        col_mail.markdown(f'[:orange[📧 MAIL]](mailto:?subject=TMC&body={msg})')
-        col_cal.markdown(f'[:red[📅 HẸN]](https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc})')
+            phone = str(row['Cellphone']).strip()
+            name_enc = urllib.parse.quote(str(row['Name KH']))
+            msg_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-        if col_done.button("Xong", key=f"d_{index}"):
-            sh = client.open_by_url(SPREADSHEET_URL)
-            ws = sh.get_worksheet(0)
-            ws.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            st.cache_data.clear()
-            st.rerun()
-        st.divider()
+            # --- NÚT BẤM KÍCH HOẠT APP (FIX TRIỆT ĐỂ) ---
+            col_call.markdown(f'[:green[📞 GỌI]](rcapp://call?number={phone})')
+            col_sms.markdown(f'[:blue[💬 SMS]](rcapp://sms?number={phone}&body={msg_enc})')
+            col_mail.markdown(f'[:orange[📧 MAIL]](mailto:?subject=TMC&body={msg_enc})')
+            
+            gcal_link = f"https://calendar.google.com/calendar/u/0/r/eventedit?text=Hen_TMC_{name_enc}"
+            col_cal.markdown(f'[:red[📅 HẸN]]({gcal_link})')
+
+            if col_done.button("Xong", key=f"x_{index}"):
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws.update_cell(index + 2, 6, now)
+                st.cache_data.clear() # Xóa cache để cập nhật dòng vừa gọi
+                st.rerun()
+            st.divider()
+
+# KHO VIDEO
+st.markdown("---")
+st.subheader("🎬 Sales Kit")
+v1, v2 = st.columns(2)
+v1.video("https://youtu.be/HHfsKefOwA4")
+v2.video("https://youtu.be/OJruIuIs_Ag")
