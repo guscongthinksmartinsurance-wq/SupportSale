@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
-import streamlit.components.v1 as components
 
 # --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
 private_key = """-----BEGIN PRIVATE KEY-----
@@ -47,31 +46,31 @@ SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DV
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 client = gspread.authorize(creds)
 
-@st.cache_data(ttl=300)
-def load_data_safe():
+# --- 2. HÀM TẢI DỮ LIỆU THÔNG MINH (CHỐNG API ERROR) ---
+def sync_data():
     sh = client.open_by_url(SPREADSHEET_URL)
     worksheet = sh.get_worksheet(0)
-    df = pd.DataFrame(worksheet.get_all_records())
+    data = worksheet.get_all_records()
+    df = pd.DataFrame(data)
     df.columns = [str(col).strip() for col in df.columns]
-    return df, worksheet
+    st.session_state['df'] = df
+    st.session_state['worksheet'] = worksheet
 
-# --- 2. HÀM TẠO NÚT BẤM SIÊU MẠNH (JS) ---
-def action_button(label, link, color):
-    # Dùng JS để ép trình duyệt mở protocol handler (rcapp)
-    html = f"""
-    <button onclick="window.top.location.href='{link}'" style="
-        width: 100%; background-color: {color}; color: white; 
-        border: none; padding: 8px; border-radius: 5px; 
-        cursor: pointer; font-weight: bold; font-family: sans-serif;
-    ">{label}</button>
-    """
-    components.html(html, height=45)
+# Khởi tạo dữ liệu lần đầu tiên
+if 'df' not in st.session_state:
+    sync_data()
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-df, ws = load_data_safe()
+# Nút Refresh thủ công
+if st.button("🔄 Đồng bộ lại dữ liệu (Sync Now)"):
+    sync_data()
+    st.rerun()
+
+df = st.session_state['df']
+ws = st.session_state['worksheet']
 
 # Sidebar: Thêm khách
 with st.sidebar:
@@ -81,11 +80,11 @@ with st.sidebar:
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     if st.button("Lưu khách hàng"):
         ws.append_row([n_name, "", n_cell, "", n_status, "", ""])
-        st.cache_data.clear()
+        sync_data() # Tải lại sau khi thêm
         st.success("Đã thêm!")
         st.rerun()
 
-# Bộ lọc thanh trượt
+# Bộ lọc (Chạy trên RAM, không gọi API Google)
 st.subheader("🔍 Bộ lọc")
 c_s1, c_s2 = st.columns([2, 1])
 with c_s1:
@@ -93,8 +92,8 @@ with c_s1:
 with c_s2:
     status_sel = st.multiselect("Lọc trạng thái:", df['Status'].unique(), default=df['Status'].unique())
 
-df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
-mask = (df['Last_Interact'].isna()) | ((datetime.now() - df['Last_Interact']).dt.days >= days)
+df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
+mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_filtered = df[mask & df['Status'].isin(status_sel)]
 
 # Danh sách hiển thị
@@ -103,23 +102,23 @@ for index, row in df_filtered.iterrows():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         
         with col_info:
-            tag = "🟢 NEW" if pd.isna(row['Last_Interact']) else ""
+            tag = "🟢 NEW" if pd.isna(row['Last_Interact_DT']) else ""
             st.markdown(f"**{row['Name KH']}** {tag}")
-            st.caption(f"📞 {row['Cellphone']}")
+            st.caption(f"📞 {row['Cellphone']} | {row['Status']}")
 
         p = str(row['Cellphone']).strip()
         name_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-        # Dùng JavaScript Button để bật App
-        with col_call: action_button("📞 GỌI", f"rcapp://call?number={p}", "#28a745")
-        with col_sms:  action_button("💬 SMS", f"rcapp://sms?number={p}&body={m_enc}", "#17a2b8")
-        with col_mail: action_button("📧 MAIL", f"mailto:?subject=TMC&body={m_enc}", "#fd7e14")
-        with col_cal:  action_button("📅 HẸN", f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc}", "#f4b400")
+        # --- NÚT BẤM DÙNG MARKDOWN (ỔN ĐỊNH NHẤT) ---
+        col_call.markdown(f"### [:green[📞 GỌI]](rcapp://call?number={p})")
+        col_sms.markdown(f"### [:blue[💬 SMS]](rcapp://sms?number={p}&body={m_enc})")
+        col_mail.markdown(f"### [:orange[📧 MAIL]](mailto:?subject=TMC&body={m_enc})")
+        col_cal.markdown(f"### [:red[📅 HẸN]](https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc})")
 
         if col_done.button("Xong", key=f"done_{index}"):
-            ws.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            st.cache_data.clear()
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ws.update_cell(index + 2, 6, now_str)
+            sync_data() # Chỉ gọi API khi nhấn Xong
             st.rerun()
         st.divider()
-
