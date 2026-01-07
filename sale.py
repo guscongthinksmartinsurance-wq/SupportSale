@@ -43,7 +43,7 @@ info = {
     "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
 }
 
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 
 # --- 2. HÀM ĐỒNG BỘ DỮ LIỆU (LAZY LOADING) ---
@@ -136,3 +136,4 @@ with v_col1:
     st.video("https://www.youtube.com/watch?v=HHfsKefOwA4") # Dán link của anh vào đây
 with v_col2:
     st.video("https://www.youtube.com/watch?v=OJruIuIs_Ag") # Dán link của anh vào đây
+
