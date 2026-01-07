@@ -44,9 +44,10 @@ info = {
   "token_uri": "https://oauth2.googleapis.com/token",
 }
 
+# --- LINK SHEETS CỦA ANH ---
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
 
-scopes = ["https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"]
+scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(info, scopes=scopes)
 client = gspread.authorize(creds)
 
@@ -57,16 +58,16 @@ def load_data():
         data = worksheet.get_all_records()
         return pd.DataFrame(data), worksheet
     except Exception as e:
-        st.error(f"Lỗi kết nối: {e}")
+        st.error(f"Lỗi: {e}")
         return pd.DataFrame(), None
 
-# --- 2. GIAO DIỆN CHÍNH ---
+# --- 2. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant Tool", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
 df, ws = load_data()
 
-# Sidebar: Thêm khách hàng mới
+# Sidebar Thêm Khách
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng Mới")
     n_name = st.text_input("Name KH")
@@ -76,7 +77,7 @@ with st.sidebar:
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     n_sales = st.text_input("Sales Assigned")
     
-    if st.button("Lưu khách hàng"):
+    if st.button("Lưu vào Google Sheets"):
         if n_name and n_cell and ws:
             ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
             st.success("Đã thêm khách mới!")
@@ -88,7 +89,8 @@ if not df.empty:
     with c1:
         days_slider = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
     with c2:
-        status_sel = st.multiselect("Lọc trạng thái:", df['Status'].unique(), default=df['Status'].unique())
+        st_unique = df['Status'].unique()
+        status_sel = st.multiselect("Lọc trạng thái:", st_unique, default=st_unique)
 
     df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
     today = datetime.now()
@@ -99,7 +101,6 @@ if not df.empty:
     
     for index, row in df_display.iterrows():
         with st.container():
-            # Tăng số cột để chứa nút Calendar
             col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([3, 1, 1, 1, 1, 1])
             
             with col_info:
@@ -107,22 +108,18 @@ if not df.empty:
                 st.markdown(f"**{row['Name KH']}** {tag}")
                 st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
-            # Lấy thông tin khách cho link
             phone = str(row['Cellphone']).strip()
             name_enc = urllib.parse.quote(str(row['Name KH']))
             msg_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-            # Links Apps (Dùng <a> tag để kích hoạt Deep Link RingCentral chính xác)
-            rc_call = f"rcapp://call?number={phone}"
-            rc_sms = f"rcapp://sms?number={phone}&body={msg_enc}"
-            out_mail = f"mailto:?subject=TMC_Support&body={msg_enc}"
-            gcal = f"https://www.google.com/calendar/render?action=TEMPLATE&text=Hen_TMC_{name_enc}"
-
-            # Nút Gọi & SMS (Dùng HTML để trình duyệt gọi App trực tiếp)
-            col_call.markdown(f'<a href="{rc_call}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#28a745; color:white; border:none; padding:5px;">📞 GỌI</button></a>', unsafe_allow_html=True)
-            col_sms.markdown(f'<a href="{rc_sms}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#17a2b8; color:white; border:none; padding:5px;">💬 SMS</button></a>', unsafe_allow_html=True)
-            col_mail.markdown(f'<a href="{out_mail}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#fd7e14; color:white; border:none; padding:5px;">📧 MAIL</button></a>', unsafe_allow_html=True)
-            col_cal.markdown(f'<a href="{gcal}" target="_blank" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#f4b400; color:white; border:none; padding:5px;">📅 HẸN</button></a>', unsafe_allow_html=True)
+            # HTML Buttons để RingCentral bật App và hiện màu sắc
+            col_call.markdown(f'<a href="rcapp://call?number={phone}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#28a745; color:white; border:none; padding:8px;">📞 GỌI</button></a>', unsafe_allow_html=True)
+            col_sms.markdown(f'<a href="rcapp://sms?number={phone}&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#17a2b8; color:white; border:none; padding:8px;">💬 SMS</button></a>', unsafe_allow_html=True)
+            col_mail.markdown(f'<a href="mailto:?subject=TMC_Support&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#fd7e14; color:white; border:none; padding:8px;">📧 MAIL</button></a>', unsafe_allow_html=True)
+            
+            # Nút Đặt lịch Google Calendar
+            gcal_link = f"https://www.google.com/calendar/render?action=TEMPLATE&text=Hen_TMC_{name_enc}"
+            col_cal.markdown(f'<a href="{gcal_link}" target="_blank" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#f4b400; color:white; border:none; padding:8px;">📅 HẸN</button></a>', unsafe_allow_html=True)
 
             if col_done.button("Xong", key=f"x_{index}"):
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -130,7 +127,6 @@ if not df.empty:
                 st.rerun()
             st.divider()
 
-# Kho Video
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
