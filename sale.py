@@ -4,8 +4,9 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
+import streamlit.components.v1 as components
 
-# --- 1. CẤU HÌNH KẾT NỐI ---
+# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -38,13 +39,11 @@ UvNQNXmUy4VQRI8i9CHtAZdp
 info = {
   "type": "service_account",
   "project_id": "caramel-hallway-481517-q8",
-  "private_key_id": "b4f20621f80d644d23e3ee6fe898acd7b955bf3e",
   "private_key": private_key.replace("\\n", "\n"),
   "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
   "token_uri": "https://oauth2.googleapis.com/token",
 }
 
-# --- LINK SHEETS CỦA ANH ---
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -57,14 +56,30 @@ def load_data():
         worksheet = sh.get_worksheet(0)
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
-        # Sửa lỗi: Tự động xóa khoảng trắng ở tiêu đề cột
         df.columns = [str(col).strip() for col in df.columns]
         return df, worksheet
     except Exception as e:
         st.error(f"Lỗi: {e}")
         return pd.DataFrame(), None
 
-# --- 2. GIAO DIỆN ---
+# --- 2. HÀM TẠO NÚT BẤM JAVASCRIPT ---
+def custom_button(label, link, color):
+    # Dùng JS window.location.assign để ép mở App
+    html_code = f"""
+    <button onclick="window.location.assign('{link}')" style="
+        width: 100%;
+        background-color: {color};
+        color: white;
+        border: none;
+        padding: 10px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    ">{label}</button>
+    """
+    components.html(html_code, height=45)
+
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant Tool", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
@@ -88,15 +103,14 @@ with st.sidebar:
 
 if not df.empty:
     st.subheader("🔍 Bộ lọc tương tác")
-    c1, c2 = st.columns([2, 1])
+    c_s1, c_s2 = st.columns([2, 1])
     
-    # Kiểm tra nếu có cột Status (đã xử lý strip space)
-    status_col = 'Status' if 'Status' in df.columns else df.columns[4] # Lấy cột thứ 5 nếu không tìm thấy tên
+    status_col = 'Status' if 'Status' in df.columns else df.columns[4]
     interact_col = 'Last_Interact' if 'Last_Interact' in df.columns else df.columns[5]
 
-    with c1:
+    with c_s1:
         days_slider = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
-    with c2:
+    with c_s2:
         st_unique = df[status_col].unique()
         status_sel = st.multiselect("Lọc trạng thái:", st_unique, default=st_unique)
 
@@ -120,21 +134,23 @@ if not df.empty:
             name_enc = urllib.parse.quote(str(row['Name KH']))
             msg_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-            # HTML Buttons màu sắc & RingCentral Deep Link
-            col_call.markdown(f'<a href="rcapp://call?number={phone}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#28a745; color:white; border:none; padding:8px; cursor:pointer;">📞 GỌI</button></a>', unsafe_allow_html=True)
-            col_sms.markdown(f'<a href="rcapp://sms?number={phone}&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#17a2b8; color:white; border:none; padding:8px; cursor:pointer;">💬 SMS</button></a>', unsafe_allow_html=True)
-            col_mail.markdown(f'<a href="mailto:?subject=TMC_Support&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#fd7e14; color:white; border:none; padding:8px; cursor:pointer;">📧 MAIL</button></a>', unsafe_allow_html=True)
-            
-            gcal_link = f"https://www.google.com/calendar/render?action=TEMPLATE&text=Hen_TMC_{name_enc}"
-            col_cal.markdown(f'<a href="{gcal_link}" target="_blank" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#f4b400; color:white; border:none; padding:8px; cursor:pointer;">📅 HẸN</button></a>', unsafe_allow_html=True)
+            # Nút bằng JavaScript để kích hoạt App
+            with col_call:
+                custom_button("📞 GỌI", f"rcapp://call?number={phone}", "#28a745")
+            with col_sms:
+                custom_button("💬 SMS", f"rcapp://sms?number={phone}&body={msg_enc}", "#17a2b8")
+            with col_mail:
+                custom_button("📧 MAIL", f"mailto:?subject=TMC_Support&body={msg_enc}", "#fd7e14")
+            with col_cal:
+                custom_button("📅 HẸN", f"https://www.google.com/calendar/render?action=TEMPLATE&text=Hen_TMC_{name_enc}", "#f4b400")
 
             if col_done.button("Xong", key=f"x_{index}"):
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                # Cập nhật cột thứ 6 (Last_Interact)
                 ws.update_cell(index + 2, 6, now)
                 st.rerun()
             st.divider()
 
+# Kho Video
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
