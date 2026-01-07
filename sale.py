@@ -42,7 +42,7 @@ info = {
     "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
 }
 
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 
 @st.cache_resource
 def get_gspread_client():
@@ -136,3 +136,4 @@ st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
 v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4") 
 v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
+
