@@ -40,15 +40,13 @@ info = {
     "project_id": "caramel-hallway-481517-q8",
     "private_key": private_key.replace("\\n", "\n"),
     "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
-    "token_uri": "https://oauth2.googleapis.com/token",
 }
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 
-# --- 2. HÀM ĐỒNG BỘ DỮ LIỆU (ANTI-API-ERROR) ---
 @st.cache_data(ttl=600)
-def load_full_data():
+def load_data_final():
     client = gspread.authorize(creds)
     sh = client.open_by_url(SPREADSHEET_URL)
     ws = sh.get_worksheet(0)
@@ -56,11 +54,11 @@ def load_full_data():
     df.columns = [str(col).strip() for col in df.columns]
     return df, ws
 
-# --- 3. GIAO DIỆN ---
+# --- 2. GIAO DIỆN CHUẨN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Sidebar: Thêm khách đầy đủ 6 cột
+# Sidebar: Thêm khách đầy đủ các cột
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng Mới")
     n_name = st.text_input("Name KH")
@@ -73,15 +71,14 @@ with st.sidebar:
     if st.button("Lưu khách hàng"):
         client = gspread.authorize(creds)
         ws_append = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-        # Lưu đúng 7 cột: Name, ID, Cell, Work, Status, Last_Interact, Sales
         ws_append.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
         st.cache_data.clear()
-        st.success("Đã thêm khách mới thành công!")
+        st.success("Đã thêm khách mới!")
         st.rerun()
 
-df, ws = load_full_data()
+df, ws = load_data_final()
 
-# Bộ lọc & Refresh
+# Thanh trượt & Refresh
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -90,36 +87,35 @@ with c_refresh:
         st.cache_data.clear()
         st.rerun()
 
-# Xử lý ngày tháng
 df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
+# --- HIỂN THỊ DANH SÁCH ---
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         
         with col_info:
-            tag = "🟢 NEW" if pd.isna(row['Last_Interact_DT']) else ""
-            st.markdown(f"**{row['Name KH']}** {tag}")
+            st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']} | {row['Status']}")
 
         p = str(row['Cellphone']).strip()
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # NÚT HÀNH ĐỘNG
-        col_call.markdown(f'<a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
+        # NÚT GỌI & SMS: Dùng lại HTML <a> tag (Cách anh đã bật được Call thành công)
+        # Sửa lại link SMS theo chuẩn Deep Link của RingCentral
+        col_call.markdown(f'<a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📞 GỌI</div></a>', unsafe_allow_html=True)
         
-        # SMS FIX: RingCentral yêu cầu tham số 'number' thay vì đường dẫn tel thông thường
-        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
+        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">💬 SMS</div></a>', unsafe_allow_html=True)
         
-        col_mail.markdown(f'<a href="mailto:?subject=TMC_Support&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
+        col_mail.markdown(f'<a href="mailto:?subject=TMC_Support&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📧 MAIL</div></a>', unsafe_allow_html=True)
         
         gcal = f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}"
-        col_cal.markdown(f'<a href="{gcal}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
+        col_cal.markdown(f'<a href="{gcal}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
             client = gspread.authorize(creds)
@@ -129,17 +125,11 @@ for index, row in df_display.iterrows():
             st.rerun()
         st.divider()
 
-# --- 4. KHO VIDEO SALES KIT (ANH DÁN LINK VÀO ĐÂY) ---
+# --- 4. KHO VIDEO SALES KIT ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v_col1, v_col2 = st.columns(2)
-
 with v_col1:
-    # Anh thay link YouTube của anh vào đây
-    st.video("https://www.youtube.com/watch?v=HHfsKefOwA4") 
-    st.caption("Video Hướng dẫn khách hàng A")
-
+    st.video("https://www.youtube.com/watch?v=HHfsKefOwA4") # Anh thay link của anh vào đây
 with v_col2:
-    # Anh thay link YouTube của anh vào đây
-    st.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
-    st.caption("Video Corporate TMC")
+    st.video("https://www.youtube.com/watch?v=OJruIuIs_Ag") # Anh thay link của anh vào đây
