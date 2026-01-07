@@ -47,7 +47,7 @@ info = {
 }
 
 # --- THAY LINK FILE GOOGLE SHEETS CỦA ANH VÀO ĐÂY ---
-SPREADSHEET_URL = "1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(info, scopes=scopes)
@@ -136,4 +136,5 @@ st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
 v1.video("https://youtu.be/HHfsKefOwA4")
 v2.video("https://youtu.be/OJruIuIs_Ag")
+
 
