@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
+# --- 1. CẤU HÌNH KẾT NỐI ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -45,7 +45,7 @@ info = {
 }
 
 # --- LINK SHEETS CỦA ANH ---
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(info, scopes=scopes)
@@ -56,7 +56,10 @@ def load_data():
         sh = client.open_by_url(SPREADSHEET_URL)
         worksheet = sh.get_worksheet(0)
         data = worksheet.get_all_records()
-        return pd.DataFrame(data), worksheet
+        df = pd.DataFrame(data)
+        # Sửa lỗi: Tự động xóa khoảng trắng ở tiêu đề cột
+        df.columns = [str(col).strip() for col in df.columns]
+        return df, worksheet
     except Exception as e:
         st.error(f"Lỗi: {e}")
         return pd.DataFrame(), None
@@ -86,16 +89,21 @@ with st.sidebar:
 if not df.empty:
     st.subheader("🔍 Bộ lọc tương tác")
     c1, c2 = st.columns([2, 1])
+    
+    # Kiểm tra nếu có cột Status (đã xử lý strip space)
+    status_col = 'Status' if 'Status' in df.columns else df.columns[4] # Lấy cột thứ 5 nếu không tìm thấy tên
+    interact_col = 'Last_Interact' if 'Last_Interact' in df.columns else df.columns[5]
+
     with c1:
         days_slider = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
     with c2:
-        st_unique = df['Status'].unique()
+        st_unique = df[status_col].unique()
         status_sel = st.multiselect("Lọc trạng thái:", st_unique, default=st_unique)
 
-    df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
+    df[interact_col] = pd.to_datetime(df[interact_col], errors='coerce')
     today = datetime.now()
-    mask = (df['Last_Interact'].isna()) | ((today - df['Last_Interact']).dt.days >= days_slider)
-    df_display = df[mask & df['Status'].isin(status_sel)]
+    mask = (df[interact_col].isna()) | ((today - df[interact_col]).dt.days >= days_slider)
+    df_display = df[mask & df[status_col].isin(status_sel)]
 
     st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
     
@@ -104,7 +112,7 @@ if not df.empty:
             col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([3, 1, 1, 1, 1, 1])
             
             with col_info:
-                tag = "🟢 NEW" if pd.isna(row['Last_Interact']) else ""
+                tag = "🟢 NEW" if pd.isna(row[interact_col]) else ""
                 st.markdown(f"**{row['Name KH']}** {tag}")
                 st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
@@ -112,17 +120,17 @@ if not df.empty:
             name_enc = urllib.parse.quote(str(row['Name KH']))
             msg_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-            # HTML Buttons để RingCentral bật App và hiện màu sắc
-            col_call.markdown(f'<a href="rcapp://call?number={phone}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#28a745; color:white; border:none; padding:8px;">📞 GỌI</button></a>', unsafe_allow_html=True)
-            col_sms.markdown(f'<a href="rcapp://sms?number={phone}&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#17a2b8; color:white; border:none; padding:8px;">💬 SMS</button></a>', unsafe_allow_html=True)
-            col_mail.markdown(f'<a href="mailto:?subject=TMC_Support&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#fd7e14; color:white; border:none; padding:8px;">📧 MAIL</button></a>', unsafe_allow_html=True)
+            # HTML Buttons màu sắc & RingCentral Deep Link
+            col_call.markdown(f'<a href="rcapp://call?number={phone}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#28a745; color:white; border:none; padding:8px; cursor:pointer;">📞 GỌI</button></a>', unsafe_allow_html=True)
+            col_sms.markdown(f'<a href="rcapp://sms?number={phone}&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#17a2b8; color:white; border:none; padding:8px; cursor:pointer;">💬 SMS</button></a>', unsafe_allow_html=True)
+            col_mail.markdown(f'<a href="mailto:?subject=TMC_Support&body={msg_enc}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#fd7e14; color:white; border:none; padding:8px; cursor:pointer;">📧 MAIL</button></a>', unsafe_allow_html=True)
             
-            # Nút Đặt lịch Google Calendar
             gcal_link = f"https://www.google.com/calendar/render?action=TEMPLATE&text=Hen_TMC_{name_enc}"
-            col_cal.markdown(f'<a href="{gcal_link}" target="_blank" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#f4b400; color:white; border:none; padding:8px;">📅 HẸN</button></a>', unsafe_allow_html=True)
+            col_cal.markdown(f'<a href="{gcal_link}" target="_blank" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#f4b400; color:white; border:none; padding:8px; cursor:pointer;">📅 HẸN</button></a>', unsafe_allow_html=True)
 
             if col_done.button("Xong", key=f"x_{index}"):
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # Cập nhật cột thứ 6 (Last_Interact)
                 ws.update_cell(index + 2, 6, now)
                 st.rerun()
             st.divider()
