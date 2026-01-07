@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
+import streamlit.components.v1 as components
 
 # --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
 private_key = """-----BEGIN PRIVATE KEY-----
@@ -42,90 +43,82 @@ info = {
   "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
 }
 
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 client = gspread.authorize(creds)
 
-# --- 2. HÀM TẢI DỮ LIỆU (CÓ CACHE ĐỂ FIX LỖI API) ---
-@st.cache_data(ttl=600) # Lưu dữ liệu 10 phút để tránh lỗi Google chặn
-def get_data():
+@st.cache_data(ttl=300)
+def load_data_safe():
     sh = client.open_by_url(SPREADSHEET_URL)
     worksheet = sh.get_worksheet(0)
-    data = worksheet.get_all_records()
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(worksheet.get_all_records())
     df.columns = [str(col).strip() for col in df.columns]
     return df, worksheet
+
+# --- 2. HÀM TẠO NÚT BẤM SIÊU MẠNH (JS) ---
+def action_button(label, link, color):
+    # Dùng JS để ép trình duyệt mở protocol handler (rcapp)
+    html = f"""
+    <button onclick="window.top.location.href='{link}'" style="
+        width: 100%; background-color: {color}; color: white; 
+        border: none; padding: 8px; border-radius: 5px; 
+        cursor: pointer; font-weight: bold; font-family: sans-serif;
+    ">{label}</button>
+    """
+    components.html(html, height=45)
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Nút Refresh thủ công
-if st.button("🔄 Cập nhật dữ liệu từ Google Sheets"):
-    st.cache_data.clear()
-    st.rerun()
+df, ws = load_data_safe()
 
-df, ws = get_data()
-
-# SIDEBAR: THÊM KHÁCH MỚI
+# Sidebar: Thêm khách
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng")
     n_name = st.text_input("Name KH")
-    n_id = st.text_input("ID")
     n_cell = st.text_input("Cellphone")
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
-    
     if st.button("Lưu khách hàng"):
-        ws.append_row([n_name, n_id, n_cell, "", n_status, "", ""])
+        ws.append_row([n_name, "", n_cell, "", n_status, "", ""])
         st.cache_data.clear()
-        st.success("Đã thêm khách mới!")
+        st.success("Đã thêm!")
         st.rerun()
 
-if not df.empty:
-    # BỘ LỌC THANH TRƯỢT
-    st.subheader("🔍 Bộ lọc")
-    c_s1, c_s2 = st.columns([2, 1])
-    with c_s1:
-        days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
-    with c_s2:
-        status_sel = st.multiselect("Trạng thái:", df['Status'].unique(), default=df['Status'].unique())
+# Bộ lọc thanh trượt
+st.subheader("🔍 Bộ lọc")
+c_s1, c_s2 = st.columns([2, 1])
+with c_s1:
+    days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
+with c_s2:
+    status_sel = st.multiselect("Lọc trạng thái:", df['Status'].unique(), default=df['Status'].unique())
 
-    df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
-    mask = (df['Last_Interact'].isna()) | ((datetime.now() - df['Last_Interact']).dt.days >= days)
-    df_display = df[mask & df['Status'].isin(status_sel)]
+df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
+mask = (df['Last_Interact'].isna()) | ((datetime.now() - df['Last_Interact']).dt.days >= days)
+df_filtered = df[mask & df['Status'].isin(status_sel)]
 
-    st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
+# Danh sách hiển thị
+for index, row in df_filtered.iterrows():
+    with st.container():
+        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
+        
+        with col_info:
+            tag = "🟢 NEW" if pd.isna(row['Last_Interact']) else ""
+            st.markdown(f"**{row['Name KH']}** {tag}")
+            st.caption(f"📞 {row['Cellphone']}")
 
-    for index, row in df_display.iterrows():
-        with st.container():
-            col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
-            
-            with col_info:
-                st.write(f"**{row['Name KH']}**")
-                st.caption(f"📞 {row['Cellphone']}")
+        p = str(row['Cellphone']).strip()
+        name_enc = urllib.parse.quote(str(row['Name KH']))
+        m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-            phone = str(row['Cellphone']).strip()
-            name_enc = urllib.parse.quote(str(row['Name KH']))
-            msg_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
+        # Dùng JavaScript Button để bật App
+        with col_call: action_button("📞 GỌI", f"rcapp://call?number={p}", "#28a745")
+        with col_sms:  action_button("💬 SMS", f"rcapp://sms?number={p}&body={m_enc}", "#17a2b8")
+        with col_mail: action_button("📧 MAIL", f"mailto:?subject=TMC&body={m_enc}", "#fd7e14")
+        with col_cal:  action_button("📅 HẸN", f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc}", "#f4b400")
 
-            # --- NÚT BẤM KÍCH HOẠT APP (FIX TRIỆT ĐỂ) ---
-            col_call.markdown(f'[:green[📞 GỌI]](rcapp://call?number={phone})')
-            col_sms.markdown(f'[:blue[💬 SMS]](rcapp://sms?number={phone}&body={msg_enc})')
-            col_mail.markdown(f'[:orange[📧 MAIL]](mailto:?subject=TMC&body={msg_enc})')
-            
-            gcal_link = f"https://calendar.google.com/calendar/u/0/r/eventedit?text=Hen_TMC_{name_enc}"
-            col_cal.markdown(f'[:red[📅 HẸN]]({gcal_link})')
-
-            if col_done.button("Xong", key=f"x_{index}"):
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                ws.update_cell(index + 2, 6, now)
-                st.cache_data.clear() # Xóa cache để cập nhật dòng vừa gọi
-                st.rerun()
-            st.divider()
-
-# KHO VIDEO
-st.markdown("---")
-st.subheader("🎬 Sales Kit")
-v1, v2 = st.columns(2)
-v1.video("https://youtu.be/HHfsKefOwA4")
-v2.video("https://youtu.be/OJruIuIs_Ag")
+        if col_done.button("Xong", key=f"done_{index}"):
+            ws.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            st.cache_data.clear()
+            st.rerun()
+        st.divider()
