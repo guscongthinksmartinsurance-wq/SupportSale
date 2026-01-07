@@ -132,4 +132,3 @@ for index, row in df_filtered.iterrows():
         st.divider()
 
 st.video("https://youtu.be/HHfsKefOwA4")
-
