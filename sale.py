@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN JSON CỦA ANH) ---
+# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -44,14 +44,12 @@ info = {
   "token_uri": "https://oauth2.googleapis.com/token",
 }
 
-# --- THAY LINK FILE GOOGLE SHEETS CỦA ANH VÀO ĐÂY ---
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1XUfU2v-vH_f2r6-L0-1K4H4yK4yK4yK4yK4yK4yK4yK/edit"
 
-scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+scopes = ["https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"]
 creds = Credentials.from_service_account_info(info, scopes=scopes)
 client = gspread.authorize(creds)
 
-# --- 2. HÀM TƯƠNG TÁC DỮ LIỆU ---
 def load_data():
     try:
         sh = client.open_by_url(SPREADSHEET_URL)
@@ -62,7 +60,7 @@ def load_data():
         st.error(f"Lỗi kết nối: {e}")
         return pd.DataFrame(), None
 
-# --- 3. GIAO DIỆN ---
+# --- 2. GIAO DIỆN CHÍNH ---
 st.set_page_config(page_title="TMC Sales Assistant Tool", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
@@ -78,9 +76,8 @@ with st.sidebar:
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     n_sales = st.text_input("Sales Assigned")
     
-    if st.button("Lưu vào Google Sheets"):
+    if st.button("Lưu khách hàng"):
         if n_name and n_cell and ws:
-            # Sửa lỗi: dùng append_row (số ít) thay vì append_rows
             ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
             st.success("Đã thêm khách mới!")
             st.rerun()
@@ -93,7 +90,6 @@ if not df.empty:
     with c2:
         status_sel = st.multiselect("Lọc trạng thái:", df['Status'].unique(), default=df['Status'].unique())
 
-    # Lọc dữ liệu
     df['Last_Interact'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
     today = datetime.now()
     mask = (df['Last_Interact'].isna()) | ((today - df['Last_Interact']).dt.days >= days_slider)
@@ -103,24 +99,33 @@ if not df.empty:
     
     for index, row in df_display.iterrows():
         with st.container():
-            col_info, col_call, col_sms, col_mail, col_done = st.columns([3, 1, 1, 1, 1])
+            # Tăng số cột để chứa nút Calendar
+            col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([3, 1, 1, 1, 1, 1])
+            
             with col_info:
                 tag = "🟢 NEW" if pd.isna(row['Last_Interact']) else ""
                 st.markdown(f"**{row['Name KH']}** {tag}")
                 st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
-            msg = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
-            rc_call = f"rcapp://call?number={row['Cellphone']}"
-            rc_sms = f"rcapp://sms?number={row['Cellphone']}&body={msg}"
-            out_mail = f"mailto:?subject=TMC_Support&body={msg}"
+            # Lấy thông tin khách cho link
+            phone = str(row['Cellphone']).strip()
+            name_enc = urllib.parse.quote(str(row['Name KH']))
+            msg_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
 
-            col_call.markdown(f"[:green[📞 GỌI]]({rc_call})")
-            col_sms.markdown(f"[:blue[💬 SMS]]({rc_sms})")
-            col_mail.markdown(f"[:orange[📧 MAIL]]({out_mail})")
+            # Links Apps (Dùng <a> tag để kích hoạt Deep Link RingCentral chính xác)
+            rc_call = f"rcapp://call?number={phone}"
+            rc_sms = f"rcapp://sms?number={phone}&body={msg_enc}"
+            out_mail = f"mailto:?subject=TMC_Support&body={msg_enc}"
+            gcal = f"https://www.google.com/calendar/render?action=TEMPLATE&text=Hen_TMC_{name_enc}"
+
+            # Nút Gọi & SMS (Dùng HTML để trình duyệt gọi App trực tiếp)
+            col_call.markdown(f'<a href="{rc_call}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#28a745; color:white; border:none; padding:5px;">📞 GỌI</button></a>', unsafe_allow_html=True)
+            col_sms.markdown(f'<a href="{rc_sms}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#17a2b8; color:white; border:none; padding:5px;">💬 SMS</button></a>', unsafe_allow_html=True)
+            col_mail.markdown(f'<a href="{out_mail}" target="_self" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#fd7e14; color:white; border:none; padding:5px;">📧 MAIL</button></a>', unsafe_allow_html=True)
+            col_cal.markdown(f'<a href="{gcal}" target="_blank" style="text-decoration:none;"><button style="width:100%; border-radius:5px; background-color:#f4b400; color:white; border:none; padding:5px;">📅 HẸN</button></a>', unsafe_allow_html=True)
 
             if col_done.button("Xong", key=f"x_{index}"):
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                # Tìm đúng dòng trên Sheets (index của DataFrame + 2)
                 ws.update_cell(index + 2, 6, now)
                 st.rerun()
             st.divider()
