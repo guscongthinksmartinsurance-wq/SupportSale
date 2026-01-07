@@ -5,8 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH KẾT NỐI (ĐÃ FIX LỖI MALFORMED KEY) ---
-# Em để Private Key trong dấu nháy đơn ba để bảo vệ định dạng chuẩn
+# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN JSON CỦA ANH) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -36,12 +35,11 @@ MWcgHed08BRLsxm5PETmUQhciTQ3yHuFkIqbND9V8XRA+YuBMCcJcpoU+WrExB3N
 UvNQNXmUy4VQRI8i9CHtAZdp
 -----END PRIVATE KEY-----"""
 
-# Tạo dictionary credentials chuẩn
 info = {
   "type": "service_account",
   "project_id": "caramel-hallway-481517-q8",
   "private_key_id": "b4f20621f80d644d23e3ee6fe898acd7b955bf3e",
-  "private_key": private_key.replace("\\n", "\n"), # Đảm bảo ký tự xuống dòng chuẩn
+  "private_key": private_key.replace("\\n", "\n"),
   "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
   "token_uri": "https://oauth2.googleapis.com/token",
 }
@@ -54,7 +52,6 @@ creds = Credentials.from_service_account_info(info, scopes=scopes)
 client = gspread.authorize(creds)
 
 # --- 2. HÀM TƯƠNG TÁC DỮ LIỆU ---
-@st.cache_data(ttl=60) # Làm mới dữ liệu sau mỗi 60 giây
 def load_data():
     try:
         sh = client.open_by_url(SPREADSHEET_URL)
@@ -62,12 +59,14 @@ def load_data():
         data = worksheet.get_all_records()
         return pd.DataFrame(data), worksheet
     except Exception as e:
-        st.error(f"Lỗi: {e}. Nhớ Share file cho tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com")
+        st.error(f"Lỗi kết nối: {e}")
         return pd.DataFrame(), None
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant Tool", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
+
+df, ws = load_data()
 
 # Sidebar: Thêm khách hàng mới
 with st.sidebar:
@@ -79,20 +78,18 @@ with st.sidebar:
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     n_sales = st.text_input("Sales Assigned")
     
-    if st.button("Lưu khách hàng"):
-        df_tmp, ws_tmp = load_data()
-        if n_name and n_cell and ws_tmp:
-            ws_tmp.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
+    if st.button("Lưu vào Google Sheets"):
+        if n_name and n_cell and ws:
+            # Sửa lỗi: dùng append_row (số ít) thay vì append_rows
+            ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
             st.success("Đã thêm khách mới!")
             st.rerun()
-
-df, ws = load_data()
 
 if not df.empty:
     st.subheader("🔍 Bộ lọc tương tác")
     c1, c2 = st.columns([2, 1])
     with c1:
-        days_slider = st.slider("Chưa tương tác quá (ngày):", 1, 60, 7)
+        days_slider = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
     with c2:
         status_sel = st.multiselect("Lọc trạng thái:", df['Status'].unique(), default=df['Status'].unique())
 
@@ -112,7 +109,6 @@ if not df.empty:
                 st.markdown(f"**{row['Name KH']}** {tag}")
                 st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
-            # Links
             msg = urllib.parse.quote(f"Chào {row['Name KH']}, em từ TMC...")
             rc_call = f"rcapp://call?number={row['Cellphone']}"
             rc_sms = f"rcapp://sms?number={row['Cellphone']}&body={msg}"
@@ -124,9 +120,8 @@ if not df.empty:
 
             if col_done.button("Xong", key=f"x_{index}"):
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                # Tìm dòng thực tế trong Sheets (index + 2 vì dòng tiêu đề và index bắt đầu từ 0)
+                # Tìm đúng dòng trên Sheets (index của DataFrame + 2)
                 ws.update_cell(index + 2, 6, now)
-                st.success("Đã cập nhật!")
                 st.rerun()
             st.divider()
 
@@ -136,5 +131,3 @@ st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
 v1.video("https://youtu.be/HHfsKefOwA4")
 v2.video("https://youtu.be/OJruIuIs_Ag")
-
-
