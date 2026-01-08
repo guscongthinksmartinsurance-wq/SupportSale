@@ -113,13 +113,15 @@ for index, row in df_display.iterrows():
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-            # Dòng 1: ID CRM + Icon Copy (Gia cố)
-            c_id1, c_id2 = st.columns([3, 1])
-            c_id1.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff; font-weight:bold; text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
-            if c_id2.button("📋", key=f"cp_{index}", help="Click để lấy mã ID dán vào CRM"):
-                st.info(f"Mã ID: {raw_id}")
+            # DÒNG ID & COPY (THẲNG HÀNG TUYỆT ĐỐI)
+            # Dùng 2 cột nhỏ sát nhau để nút copy không bị nhảy dòng
+            cid_txt, cid_btn = st.columns([0.7, 1.3])
+            cid_txt.markdown(f'🆔 <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff; font-weight:bold; text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            if cid_btn.button("📋", key=f"cp_{index}", help=f"Copy ID: {raw_id}"):
+                st.code(raw_id, language="text") # Hiện mã ID ngay dưới để anh copy
+                st.toast(f"Đã lấy mã ID của {row['Name KH']}")
             
-            # Dòng 2: Cellphone + SMS Icon + Mail Icon + Calendar Icon
+            # DÒNG LIÊN LẠC (ICON SÁT PHONE)
             comm_html = f"""
             <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px; margin-bottom: 5px;">
                 <span style="font-size: 16px;">📱 Cell: <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
@@ -137,7 +139,7 @@ for index, row in df_display.iterrows():
 
         with c_note:
             st.caption("📝 Ghi chú & Xử lý:")
-            st.text_area("History", value=row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
+            st.text_area("History", row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
             c_in, c_btn = st.columns([3, 1])
             new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{index}"):
