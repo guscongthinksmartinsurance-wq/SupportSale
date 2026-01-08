@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. XÁC THỰC ---
+# --- 1. XÁC THỰC (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -48,33 +48,35 @@ def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-def load_data_raw():
+def load_all_data():
     client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
-    leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
+    df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
     try:
-        links = pd.DataFrame(sh.worksheet("Links").get_all_records())
+        df_links = pd.DataFrame(sh.worksheet("Links").get_all_records())
     except:
-        links = pd.DataFrame(columns=["Category", "Title", "URL"])
-    return leads, links
+        df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
+    return df_leads, df_links
 
-# Hàm xử lý lưu Note (Cơ chế CRM: Hiện lên App trước, ghi Sheet sau)
-def save_note_optimistic(real_row, current_note, note_key, idx):
+# Hàm lưu Note: Chìa khóa để hiện Note ngay lập tức
+def save_note_action(real_row, old_note, note_key, idx):
     new_text = st.session_state[note_key]
     if new_text:
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-        combined = f"[{now.strftime('%m/%d')}]: {new_text}\n{current_note}"
-        # 1. Ghi Sheet
+        combined = f"[{now.strftime('%m/%d')}]: {new_text}\n{old_note}"
+        
+        # 1. Ghi vào Google Sheet (Chạy ngầm)
         client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
         ws.update_cell(real_row, 8, timestamp)
         ws.update_cell(real_row, 9, combined[:5000])
-        # 2. Cập nhật session_state để hiện ngay lập tức
-        st.session_state[f"live_note_{idx}"] = combined
+        
+        # 2. KHÓA dữ liệu mới vào bộ nhớ App để nó hiện ngay lập tức
+        st.session_state[f"force_display_{idx}"] = combined
         st.toast("✅ Đã lưu History!")
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Master Tool", layout="wide")
-df_leads, df_links = load_data_raw()
+df_leads, df_links = load_all_data()
 
 with st.sidebar:
     st.title("🛠️ Control Center")
@@ -93,9 +95,8 @@ with st.sidebar:
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
         with st.form("new_lead"):
-            n = st.text_input("Name KH"); i = st.text_input("ID CRM"); p = st.text_input("Cellphone")
-            w = st.text_input("Workphone"); e = st.text_input("Email"); s = st.text_input("State")
-            if st.form_submit_button("Save Lead"):
+            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
+            if st.form_submit_button("Save"):
                 ws = get_gs_client().open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 ws.append_row([n, i, p, w, e, s, "New", "", "", ""]); st.rerun()
 
@@ -112,9 +113,10 @@ df_disp = df_leads if days == 0 else df_leads[(df_leads['Last_Interact_DT'].isna
 
 # --- RENDER PIPELINE ---
 for idx, row in df_disp.iterrows():
-    r_row = int(row['real_row']); k_in = f"in_{idx}"
-    # Lấy note "nóng" từ session_state nếu có, nếu không lấy từ row
-    current_val = st.session_state.get(f"live_note_{idx}", row.get('Note',''))
+    r_row = int(row['real_row']); k_in = f"input_{idx}"
+    
+    # CHIẾN THUẬT: Nếu trong bộ nhớ App có Note mới, dùng nó. Nếu không mới dùng từ Excel.
+    final_note = st.session_state.get(f"force_display_{idx}", row.get('Note',''))
 
     with st.container():
         c_info, c_note, c_action = st.columns([4, 5, 1])
@@ -129,8 +131,9 @@ for idx, row in df_disp.iterrows():
             st.caption(f"📍 State: {row.get('State','N/A')}")
         
         with c_note:
-            st.text_area("History", value=current_val, height=100, disabled=True, key=f"h_{idx}", label_visibility="collapsed")
-            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=save_note_optimistic, args=(r_row, current_val, k_in, idx), label_visibility="collapsed", placeholder="Nhập ghi chú...")
+            st.text_area("History", value=final_note, height=100, disabled=True, key=f"h_{idx}", label_visibility="collapsed")
+            # GÕ VÀ ENTER ĐỂ LƯU
+            st.text_input("Gõ Note mới rồi nhấn Enter", key=k_in, on_change=save_note_action, args=(r_row, final_note, k_in, idx), label_visibility="collapsed", placeholder="Nhập ghi chú...")
 
         with c_action:
             with st.popover("⋮"):
