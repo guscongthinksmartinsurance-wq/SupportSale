@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
+import time
 
 # --- 1. XÁC THỰC ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
@@ -42,33 +43,30 @@ info = {
 }
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. HÀM DỮ LIỆU ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
+@st.cache_data(ttl=2) # Giảm TTL xuống cực thấp để dữ liệu mới nhảy vào app nhanh hơn
 def load_all_data():
     client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
-    # Lead Data
     df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
-    # Link Data
     try:
         df_links = pd.DataFrame(sh.worksheet("Links").get_all_records())
     except:
         df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
     return df_leads, df_links
 
-# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Master Tool", layout="wide")
 df_leads, df_links = load_all_data()
 
+# --- SIDEBAR (Giữ nguyên cấu trúc anh đã duyệt) ---
 with st.sidebar:
     st.title("🛠️ Control Center")
     with st.expander("🔗 Thêm Link / Video Mới"):
         with st.form("add_link_form", clear_on_submit=True):
-            cat = st.selectbox("Loại", ["Quick Link", "Sales Kit"])
-            tit = st.text_input("Tiêu đề"); url = st.text_input("URL")
+            cat = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); tit = st.text_input("Tiêu đề"); url = st.text_input("URL")
             if st.form_submit_button("Thêm ngay"):
                 if tit and url:
                     client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).worksheet("Links")
@@ -97,7 +95,7 @@ with c_filter: days = st.slider("Hiện khách chưa đụng tới quá (ngày):
 with c_refresh: 
     if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
-# ĐÁNH DẤU SỐ DÒNG THỰC TẾ (QUAN TRỌNG ĐỂ KHÔNG GHI NHẦM)
+# XỬ LÝ ROW INDEX CHÍNH XÁC
 df_leads['real_row'] = range(2, len(df_leads) + 2)
 df_leads['Last_Interact_DT'] = pd.to_datetime(df_leads['Last_Interact'], errors='coerce')
 
@@ -107,9 +105,9 @@ else:
     mask = (df_leads['Last_Interact_DT'].isna()) | ((datetime.now() - df_leads['Last_Interact_DT']).dt.days >= days)
     df_display = df_leads[mask]
 
-# --- 4. RENDER PIPELINE ---
+# --- RENDER PIPELINE ---
 for idx, row in df_display.iterrows():
-    real_sheet_row = int(row['real_row']) # Dùng đúng số dòng thực tế trên Excel
+    real_sheet_row = int(row['real_row'])
     with st.container():
         c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
         with c_left:
@@ -130,28 +128,28 @@ for idx, row in df_display.iterrows():
             c_in, c_btn = st.columns([3, 1])
             new_n = c_in.text_input("Note mới...", key=f"in_{idx}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{idx}"):
-                client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                now = datetime.now()
-                # Ghi chuẩn vào đúng dòng real_sheet_row
-                ws_u.update_cell(real_sheet_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
                 if new_n:
-                    combined = f"[{now.strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
-                    ws_u.update_cell(real_sheet_row, 9, combined[:5000])
-                st.cache_data.clear(); st.rerun()
+                    client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+                    now = datetime.now()
+                    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+                    new_history = f"[{now.strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
+                    
+                    # GHI ĐỒNG THỜI CẢ 2 CỘT ĐỂ TRÁNH LỖI (Cột 8 và Cột 9)
+                    ws_u.update(range_name=f'H{real_sheet_row}:I{real_sheet_row}', 
+                              values=[[now_str, new_history[:5000]]])
+                    
+                    st.toast("✅ Đã lưu ghi chú thành công!")
+                    time.sleep(0.5) # Đợi một chút để Google Sheets kịp "thở"
+                    st.cache_data.clear()
+                    st.rerun()
 
         with c_action:
             with st.popover("⋮"):
                 st.write("✏️ EDIT LEAD")
-                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{idx}")
-                e_id = st.text_input("ID", value=row['ID'], key=f"ei_{idx}")
-                e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{idx}")
-                e_work = st.text_input("Work", value=row.get('Workphone',''), key=f"ew_{idx}")
-                e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{idx}")
-                e_state = st.text_input("State", value=row.get('State',''), key=f"es_{idx}")
+                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{idx}"); e_id = st.text_input("ID", value=row['ID'], key=f"ei_{idx}"); e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{idx}"); e_work = st.text_input("Work", value=row.get('Workphone',''), key=f"ew_{idx}"); e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{idx}"); e_state = st.text_input("State", value=row.get('State',''), key=f"es_{idx}")
                 if st.button("Save", key=f"sv_{idx}"):
                     client = get_gs_client(); ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                    ws_e.update_cell(real_sheet_row, 1, e_name); ws_e.update_cell(real_sheet_row, 2, e_id)
-                    ws_e.update_cell(real_sheet_row, 3, e_cell); ws_e.update_cell(real_sheet_row, 4, e_work)
-                    ws_e.update_cell(real_sheet_row, 5, e_email); ws_e.update_cell(real_sheet_row, 6, e_state)
+                    ws_e.update(range_name=f'A{real_sheet_row}:F{real_sheet_row}', 
+                              values=[[e_name, e_id, e_cell, e_work, e_email, e_state]])
                     st.cache_data.clear(); st.rerun()
         st.divider()
