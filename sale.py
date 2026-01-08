@@ -61,7 +61,7 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN CHUẨN ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
@@ -96,30 +96,27 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DỨT ĐIỂM (BẢN SỬA LỖI TRANG TRẮNG) ---
+# --- 4. HIỂN THỊ DỨT ĐIỂM (DÙNG NÚT BẤM CHÍNH CHỦ) ---
 for index, row in df_display.iterrows():
     with st.container():
-        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
+        # Chia cột đều để ép thẳng hàng tuyệt đối
+        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 0.8])
+        
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
         p = str(row['Cellphone']).strip()
         n_enc = urllib.parse.quote(str(row['Name KH']))
-        m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em gọi từ TMC...")
+        m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # GIẢI PHÁP DỨT ĐIỂM: Sử dụng HTML nhúng với target="_top" để kích hoạt App ngay tại cửa sổ hiện tại
-        # Cách này ép trình duyệt gọi giao thức hệ thống mà không cần mở tab mới
-        
-        col_call.markdown(f'''<a href="rcapp://call?number={p}" target="_top" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📞 GỌI</div></a>''', unsafe_allow_html=True)
-        
-        col_sms.markdown(f'''<a href="rcapp://sms?number={p}&body={m_enc}" target="_top" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>''', unsafe_allow_html=True)
+        # DÙNG st.link_button: Thẳng hàng và trình duyệt tin tưởng nhất
+        col_call.link_button("📞 GỌI", f"rcapp://call?number={p}", use_container_width=True)
+        col_sms.link_button("💬 SMS", f"rcapp://sms?number={p}&body={m_enc}", use_container_width=True)
+        col_mail.link_button("📧 MAIL", f"mailto:?subject=TMC&body={m_enc}", use_container_width=True)
+        col_cal.link_button("📅 HẸN", f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}", use_container_width=True)
 
-        col_mail.markdown(f'''<a href="mailto:?subject=TMC&body={m_enc}" target="_top" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>''', unsafe_allow_html=True)
-
-        col_cal.markdown(f'''<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>''', unsafe_allow_html=True)
-
-        if col_done.button("Xong", key=f"d_{index}"):
+        if col_done.button("Xong", key=f"d_{index}", use_container_width=True):
             client = get_gs_client()
             ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
