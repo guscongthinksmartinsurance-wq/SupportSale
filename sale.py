@@ -5,7 +5,7 @@ from datetime import datetime
 import urllib.parse
 
 # --- 1. KHỞI TẠO DATABASE ---
-DB_NAME = "tmc_crm_v13.db"
+DB_NAME = "tmc_crm_final.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -20,30 +20,44 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. GIAO DIỆN ---
-st.set_page_config(page_title="TMC CRM Pro", layout="wide")
+# --- 2. HÀM XỬ LÝ LƯU NOTE (SẠCH, KHÔNG LỖI ĐỎ) ---
+def save_note_v14(lid, key, current_h):
+    new_txt = st.session_state[key]
+    if new_txt:
+        now = datetime.now()
+        combined = f"[{now.strftime('%m/%d')}]: {new_txt}\n{current_h}"
+        # Ghi DB
+        cursor = conn.cursor()
+        cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
+                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
+        conn.commit()
+        # Không reset key ở đây để tránh lỗi StreamlitAPIException
+        st.session_state["just_saved"] = True
+
+# --- 3. GIAO DIỆN ---
+st.set_page_config(page_title="TMC Master CRM", layout="wide")
+
+# Kiểm tra nếu vừa lưu xong thì rerun để dọn dẹp ô nhập và hiện History
+if st.session_state.get("just_saved"):
+    st.session_state["just_saved"] = False
+    st.rerun()
 
 with st.sidebar:
     st.title("🛠️ Local CRM")
-    # Quản lý Links
-    with st.expander("🔗 Add Link / Video"):
-        with st.form("add_l", clear_on_submit=True):
-            c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
-            if st.form_submit_button("Lưu"):
-                conn.execute('INSERT INTO links (category, title, url) VALUES (?,?,?)', (c, t, u)); conn.commit(); st.rerun()
-
+    # Links
     df_links = pd.read_sql('SELECT * FROM links', conn)
     with st.expander("🚀 Quick Links", expanded=True):
-        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
+        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
+            st.markdown(f"**[{l['title']}]({l['url']})**")
     with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
-    
+        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
+            st.caption(v['title']); st.video(v['URL'])
     st.divider()
-    # Thêm Lead mới full trường
+    # Add Lead
     with st.expander("➕ Add New Lead", expanded=True):
         with st.form("new_lead", clear_on_submit=True):
-            n = st.text_input("Name KH"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
-            if st.form_submit_button("Save Lead"):
+            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
+            if st.form_submit_button("Lưu"):
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note) VALUES (?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", ""))
                 conn.commit(); st.rerun()
 
@@ -52,7 +66,7 @@ st.title("💼 Pipeline Processing")
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
-# Render Pipeline
+# Render Lead
 for _, row in leads_df.iterrows():
     lid = row['id']
     curr_h = row['note'] if row['note'] else ""
@@ -74,28 +88,13 @@ for _, row in leads_df.iterrows():
                 <a href="mailto:{em}?body={m_e}">📧</a>
                 <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a>
             </div>""", unsafe_allow_html=True)
-            
             if p_w and p_w not in ['0', '']:
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
-            st.caption(f"📍 State: {row['state']}")
         
         with c2:
             st.text_area("History", value=curr_h, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            
-            # XỬ LÝ NHẬP NOTE: Dùng biến trung gian để bắt Enter mà không lỗi Rerun
-            new_note = st.text_input("Ghi chú mới & Enter", key=input_key, label_visibility="collapsed", placeholder="Nhập note...")
-            
-            if new_note: # Khi anh vừa nhấn Enter
-                now = datetime.now()
-                combined = f"[{now.strftime('%m/%d')}]: {new_note}\n{curr_h}"
-                # 1. Ghi Database nội bộ (Cực nhanh)
-                conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
-                             (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
-                conn.commit()
-                # 2. Xóa bộ nhớ đệm của ô nhập đúng cách để tránh lỗi StreamlitAPIException
-                st.session_state[input_key] = "" 
-                # 3. ÉP LÀM MỚI TRANG NGAY LẬP TỨC
-                st.rerun()
+            # ENTER LÀM MỚI TỨC THÌ
+            st.text_input("Ghi chú mới & Enter", key=input_key, on_change=save_note_v14, args=(lid, input_key, curr_h), label_visibility="collapsed", placeholder="Nhập note...")
 
         with c3:
             with st.popover("⋮"):
