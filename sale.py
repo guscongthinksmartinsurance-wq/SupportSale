@@ -20,24 +20,8 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. HÀM XỬ LÝ LƯU NOTE ---
-def save_note_db(lead_id, note_key, old_note):
-    new_text = st.session_state[note_key]
-    if new_text:
-        now = datetime.now()
-        combined = f"[{now.strftime('%m/%d')}]: {new_text}\n{old_note}"
-        # Ghi vào Database
-        cursor = conn.cursor()
-        cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
-                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lead_id))
-        conn.commit()
-        # Cập nhật vào Session State để ép giao diện hiển thị ngay
-        st.session_state[f"force_h_{lead_id}"] = combined
-        # Xóa ô nhập liệu
-        st.session_state[note_key] = ""
-
-# --- 3. GIAO DIỆN ---
-st.set_page_config(page_title="TMC SQLite CRM", layout="wide")
+# --- 2. GIAO DIỆN ---
+st.set_page_config(page_title="TMC CRM Pro", layout="wide")
 
 with st.sidebar:
     st.title("🛠️ Local Control")
@@ -51,7 +35,7 @@ with st.sidebar:
     with st.expander("🚀 Quick Links", expanded=True):
         for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
     with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
+        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['url'])
     
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
@@ -64,7 +48,7 @@ with st.sidebar:
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
 
-# Đọc dữ liệu từ DB
+# Đọc dữ liệu
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
@@ -77,11 +61,7 @@ if days > 0:
 # --- RENDER PIPELINE ---
 for _, row in leads_df.iterrows():
     lid = row['id']
-    k_in = f"in_{lid}"
-    
-    # CHIẾN THUẬT: Ưu tiên lấy Note từ Session State (mới gõ xong) 
-    # Nếu không có mới lấy từ Database
-    disp_note = st.session_state.get(f"force_h_{lid}", row['note'] if row['note'] else "")
+    curr_h = row['note'] if row['note'] else ""
 
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
@@ -95,10 +75,20 @@ for _, row in leads_df.iterrows():
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
         
         with c2:
-            # Ô History hiển thị disp_note (đã được đồng bộ RAM)
-            st.text_area("History", value=disp_note, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            # Ô Nhập Note
-            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=save_note_db, args=(lid, k_in, disp_note), label_visibility="collapsed", placeholder="Nhập note...")
+            st.text_area("History", value=curr_h, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
+            
+            # GIẢI PHÁP TỐI ƯU: Dùng Form nhỏ cho từng dòng Note
+            with st.form(key=f"form_note_{lid}", clear_on_submit=True):
+                c_in, c_btn = st.columns([4, 1])
+                new_msg = c_in.text_input("Note", label_visibility="collapsed", placeholder="Nhập ghi chú mới...")
+                if c_btn.form_submit_button("XONG ✅"):
+                    if new_msg:
+                        now = datetime.now()
+                        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{curr_h}"
+                        conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
+                                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
+                        conn.commit()
+                        st.rerun() # Lệnh này sẽ chạy chuẩn 100% khi nằm trong form_submit_button
 
         with c3:
             with st.popover("⋮"):
