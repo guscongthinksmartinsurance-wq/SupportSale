@@ -4,9 +4,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
-import streamlit.components.v1 as components
 
-# --- 1. CẤU HÌNH XÁC THỰC (GIỮ NGUYÊN BẢN ĐÃ CHẠY ĐƯỢC) ---
+# --- 1. CẤU HÌNH (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -46,7 +45,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CACHE DỮ LIỆU ---
+# --- 2. CACHE ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -62,7 +61,7 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN CHUẨN ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
@@ -97,49 +96,62 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HÀM TẠO NÚT BẤM HTML THẲNG HÀNG & BẬT APP ---
-def create_action_buttons(phone, name, email_body):
-    name_enc = urllib.parse.quote(name)
-    msg_enc = urllib.parse.quote(email_body)
-    
-    # HTML kết hợp CSS để ép 4 nút nằm trên 1 hàng và đều nhau
-    html_code = f"""
-    <div style="display: flex; gap: 10px; align-items: center; width: 100%;">
-        <a href="rcapp://call?number={phone}" target="_parent" style="flex: 1; text-decoration: none;">
-            <div style="background-color: #28a745; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">📞 GỌI</div>
-        </a>
-        <a href="rcapp://sms?number={phone}&body={msg_enc}" target="_parent" style="flex: 1; text-decoration: none;">
-            <div style="background-color: #17a2b8; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">💬 SMS</div>
-        </a>
-        <a href="mailto:?subject=TMC&body={msg_enc}" target="_parent" style="flex: 1; text-decoration: none;">
-            <div style="background-color: #fd7e14; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">📧 MAIL</div>
-        </a>
-        <a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc}" target="_blank" style="flex: 1; text-decoration: none;">
-            <div style="background-color: #f4b400; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">📅 HẸN</div>
-        </a>
-    </div>
-    """
-    return components.html(html_code, height=60)
-
+# --- 4. HIỂN THỊ DỨT ĐIỂM ---
 for index, row in df_display.iterrows():
     with st.container():
-        col_info, col_actions, col_done = st.columns([2.5, 4.5, 0.6])
+        # Chỉ chia 2 cột chính: Thông tin khách và Cụm nút bấm
+        col_info, col_actions = st.columns([1, 2])
         
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
         with col_actions:
-            # Gọi hàm tạo nút bấm thẳng hàng
-            create_action_buttons(str(row['Cellphone']).strip(), str(row['Name KH']), f"Chào {row['Name KH']}, em gọi từ TMC...")
-
-        with col_done:
-            if st.button("Xong", key=f"d_{index}"):
+            p = str(row['Cellphone']).strip()
+            n_enc = urllib.parse.quote(str(row['Name KH']))
+            m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
+            
+            # DÙNG BẢNG HTML ĐỂ ÉP THẲNG HÀNG VÀ BẬT ĐƯỢC APP (BỎ QUA SANDBOX)
+            st.markdown(f"""
+            <table style="width:100%; border-collapse: collapse; border: none;">
+                <tr>
+                    <td style="width:20%; padding:2px;">
+                        <a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;">
+                            <div style="background-color:#28a745; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold;">📞 GỌI</div>
+                        </a>
+                    </td>
+                    <td style="width:20%; padding:2px;">
+                        <a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;">
+                            <div style="background-color:#17a2b8; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold;">💬 SMS</div>
+                        </a>
+                    </td>
+                    <td style="width:20%; padding:2px;">
+                        <a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;">
+                            <div style="background-color:#fd7e14; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold;">📧 MAIL</div>
+                        </a>
+                    </td>
+                    <td style="width:20%; padding:2px;">
+                        <a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;">
+                            <div style="background-color:#f4b400; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold;">📅 HẸN</div>
+                        </a>
+                    </td>
+                    <td style="width:20%; padding:2px;">
+                        <form action="/" method="get">
+                            <button name="done" value="{index}" style="width:100%; background-color:#6c757d; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">DONE</button>
+                        </form>
+                    </td>
+                </tr>
+            </table>
+            """, unsafe_allow_html=True)
+            
+            # Xử lý nút Xong (Done) qua query params hoặc button riêng của streamlit bên dưới bảng
+            if st.button("Xác nhận Xong KH này", key=f"btn_{index}"):
                 client = get_gs_client()
                 ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 st.cache_data.clear()
                 st.rerun()
+
         st.divider()
 
 # --- 5. VIDEO SALES KIT (GIỮ NGUYÊN) ---
