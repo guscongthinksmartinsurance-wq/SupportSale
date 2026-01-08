@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
-import time
 
 # --- 1. XÁC THỰC ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
@@ -49,7 +48,7 @@ def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def load_all_data():
     client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
     df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
@@ -89,8 +88,7 @@ with st.sidebar:
 st.title("💼 Pipeline Processing")
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter: days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
-with c_refresh: 
-    if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
+if st.button("🔄 Làm mới dữ liệu"): st.cache_data.clear(); st.rerun()
 
 df_leads['real_row'] = range(2, len(df_leads) + 2)
 df_leads['Last_Interact_DT'] = pd.to_datetime(df_leads['Last_Interact'], errors='coerce')
@@ -100,10 +98,9 @@ df_disp = df_leads if days == 0 else df_leads[(df_leads['Last_Interact_DT'].isna
 for idx, row in df_disp.iterrows():
     r_row = int(row['real_row'])
     l_name = row['Name KH']
-    k_in = f"input_note_{idx}"
     
-    # Ưu tiên lấy note từ session_state nếu vừa được cập nhật
-    disp_history = st.session_state.get(f"last_note_{idx}", row.get('Note', ''))
+    # Hiển thị History (ưu tiên biến tạm để mượt mà)
+    current_history = st.session_state.get(f"hist_{idx}", row.get('Note', ''))
 
     with st.container():
         c_info, c_note, c_action = st.columns([4, 5, 1])
@@ -118,33 +115,37 @@ for idx, row in df_disp.iterrows():
             st.caption(f"📍 State: {row.get('State','N/A')}")
         
         with c_note:
-            st.text_area("History", value=disp_history, height=120, disabled=True, key=f"h_{idx}", label_visibility="collapsed")
-            # KHU VỰC NHẬP VÀ XỬ LÝ ENTER
-            new_note = st.text_input("Gõ nội dung & Nhấn Enter", key=k_in, placeholder="Thêm ghi chú mới...", label_visibility="collapsed")
-            if new_note and new_note != st.session_state.get(f"prev_{k_in}", ""):
-                # Ghi vào Google Sheet
-                client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                now = datetime.now()
-                ts = now.strftime("%Y-%m-%d %H:%M:%S")
-                combined = f"[{now.strftime('%m/%d')}]: {new_note}\n{disp_history}"
-                ws.update_cell(r_row, 8, ts)
-                ws.update_cell(r_row, 9, combined[:5000])
-                # Lưu vào trạng thái tạm để hiển thị ngay
-                st.session_state[f"last_note_{idx}"] = combined
-                st.session_state[f"prev_{k_in}"] = new_note
-                st.cache_data.clear()
-                st.rerun()
+            st.text_area("History", value=current_history, height=120, disabled=True, key=f"area_{idx}", label_visibility="collapsed")
+            
+            # Ô NHẬP NOTE MỚI
+            c_input, c_btn = st.columns([6, 1])
+            with c_input:
+                new_msg = st.text_input("Ghi chú", key=f"in_{idx}", label_visibility="collapsed", placeholder="Nhập note...")
+            with c_btn:
+                if st.button("▷", key=f"btn_{idx}"):
+                    if new_msg:
+                        # 1. Tạo nội dung mới
+                        now = datetime.now()
+                        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{current_history}"
+                        # 2. Ghi Sheet
+                        ws = get_gs_client().open_by_url(SPREADSHEET_URL).get_worksheet(0)
+                        ws.update_cell(r_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
+                        ws.update_cell(r_row, 9, combined[:5000])
+                        # 3. Ép cập nhật giao diện
+                        st.session_state[f"hist_{idx}"] = combined
+                        st.cache_data.clear()
+                        st.rerun()
 
         with c_action:
             with st.popover("⋮"):
-                st.write("✏️ EDIT LEAD")
+                st.write("✏️ EDIT")
                 en = st.text_input("Name", value=row['Name KH'], key=f"en_{idx}")
                 ei = st.text_input("ID", value=row['ID'], key=f"ei_{idx}")
                 ec = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{idx}")
                 ew = st.text_input("Work", value=row.get('Workphone',''), key=f"ew_{idx}")
                 ee = st.text_input("Email", value=row.get('Email',''), key=f"ee_{idx}")
                 es = st.text_input("State", value=row.get('State',''), key=f"es_{idx}")
-                if st.button("Save Changes", key=f"sv_{idx}"):
+                if st.button("Lưu thay đổi", key=f"sv_{idx}"):
                     ws = get_gs_client().open_by_url(SPREADSHEET_URL).get_worksheet(0)
                     ws.update_cell(r_row, 1, en); ws.update_cell(r_row, 2, ei); ws.update_cell(r_row, 3, ec); ws.update_cell(r_row, 4, ew); ws.update_cell(r_row, 5, ee); ws.update_cell(r_row, 6, es)
                     st.cache_data.clear(); st.rerun()
