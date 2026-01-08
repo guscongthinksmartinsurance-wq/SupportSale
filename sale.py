@@ -45,7 +45,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CACHE DỮ LIỆU ---
+# --- 2. CACHE DỮ LIỆU (GIỮ NGUYÊN) ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -96,11 +96,10 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DỨT ĐIỂM (DÙNG CÁCH CŨ OK VỚI CALL/MAIL) ---
+# --- 4. HIỂN THỊ CHI TIẾT ---
 for index, row in df_display.iterrows():
     with st.container():
-        # Dùng st.columns để thẳng hàng như anh muốn
-        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 0.8])
+        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
@@ -108,19 +107,21 @@ for index, row in df_display.iterrows():
 
         p = str(row['Cellphone']).strip()
         n_enc = urllib.parse.quote(str(row['Name KH']))
-        m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em gọi từ TMC...")
+        m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # GỌI & MAIL: Dùng lại cách cũ anh báo là OK
+        # NÚT GỌI (GIỮ NGUYÊN - ĐÃ OK)
         col_call.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
         
-        # SMS: Đây là điểm duy nhất em chỉnh lại link chuẩn cho RingCentral
-        col_sms.markdown(f'<a href="sms:{p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
+        # NÚT SMS (SỬA ĐÚNG CÁI NÀY - DÙNG GIAO THỨC RCAPP ĐỂ ÉP BẬT RINGCENTRAL)
+        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
         
+        # NÚT MAIL (GIỮ NGUYÊN - ĐÃ OK)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
         
+        # NÚT HẸN (GIỮ NGUYÊN - ĐÃ OK)
         col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
-        if col_done.button("Xong", key=f"d_{index}", use_container_width=True):
+        if col_done.button("Xong", key=f"d_{index}"):
             client = get_gs_client()
             ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
