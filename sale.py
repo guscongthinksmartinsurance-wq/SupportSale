@@ -4,8 +4,8 @@ import sqlite3
 from datetime import datetime
 import urllib.parse
 
-# --- 1. KHỞI TẠO DATABASE (CRM NỘI BỘ) ---
-DB_NAME = "tmc_crm_v10.db"
+# --- 1. KHỞI TẠO DATABASE ---
+DB_NAME = "tmc_crm_v12.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -23,26 +23,11 @@ conn = init_db()
 # --- 2. GIAO DIỆN ---
 st.set_page_config(page_title="TMC CRM Pro", layout="wide")
 
-# Hàm lưu note kiểu CRM chuyên nghiệp
-def save_note_crm(lid, note_key, current_h):
-    new_msg = st.session_state[note_key]
-    if new_msg:
-        now = datetime.now()
-        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{current_h}"
-        # 1. Ghi vào Database
-        cursor = conn.cursor()
-        cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
-                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
-        conn.commit()
-        # 2. Xóa nội dung ô nhập để sẵn sàng cho note tiếp theo
-        st.session_state[note_key] = ""
-        # 3. ÉP LÀM MỚI GIAO DIỆN NGAY LẬP TỨC
-        st.rerun()
-
 with st.sidebar:
-    st.title("🛠️ CRM Database")
+    st.title("🛠️ Local CRM Control")
+    # Quản lý Links
     with st.expander("🔗 Add Link / Video"):
-        with st.form("add_l"):
+        with st.form("add_l", clear_on_submit=True):
             c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
             if st.form_submit_button("Lưu"):
                 conn.execute('INSERT INTO links (category, title, url) VALUES (?,?,?)', (c, t, u)); conn.commit(); st.rerun()
@@ -54,25 +39,18 @@ with st.sidebar:
         for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
     
     st.divider()
+    # Thêm Lead mới full trường
     with st.expander("➕ Add New Lead", expanded=True):
-        with st.form("new_lead"):
-            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
-            if st.form_submit_button("Save"):
+        with st.form("new_lead", clear_on_submit=True):
+            n = st.text_input("Name KH"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
+            if st.form_submit_button("Save Lead"):
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note) VALUES (?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", ""))
                 conn.commit(); st.rerun()
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
-
-# Load data mới nhất
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
-
-# Lọc ngày
-leads_df['last_interact_dt'] = pd.to_datetime(leads_df['last_interact'], errors='coerce')
-if days > 0:
-    mask = (leads_df['last_interact_dt'].isna()) | ((datetime.now() - leads_df['last_interact_dt']).dt.days >= days)
-    leads_df = leads_df[mask]
 
 # Render Lead
 for _, row in leads_df.iterrows():
@@ -84,17 +62,41 @@ for _, row in leads_df.iterrows():
         c1, c2, c3 = st.columns([4, 5, 1])
         with c1:
             st.markdown(f"#### {row['name']}")
+            # ID copy
             rid = str(row['crm_id']).strip().replace('#', '').lower()
             st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied!')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {rid}</span></div>""", unsafe_allow_html=True)
-            p_c = str(row['cell']).strip(); p_w = str(row['work']).strip()
-            st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span></div>""", unsafe_allow_html=True)
+            
+            # Liên lạc
+            p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); em = str(row['email']).strip()
+            n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
+            
+            st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;">
+                <span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span>
+                <a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a>
+                <a href="mailto:{em}?body={m_e}">📧</a>
+                <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a>
+            </div>""", unsafe_allow_html=True)
+            
             if p_w and p_w not in ['0', '']:
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
+            st.caption(f"📍 State: {row['state']}")
         
         with c2:
             st.text_area("History", value=curr_h, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            # CƠ CHẾ CRM: Nhấn Enter để gọi hàm save_note_crm và tự động rerun
-            st.text_input("Ghi chú mới & Enter", key=input_key, on_change=save_note_crm, args=(lid, input_key, curr_h), label_visibility="collapsed", placeholder="Nhập note...")
+            
+            # XỬ LÝ NHẬP NOTE TỨC THÌ
+            new_note = st.text_input("Ghi chú mới & Enter", key=input_key, label_visibility="collapsed", placeholder="Nhập note...")
+            
+            if new_note: # Nếu anh vừa nhấn Enter
+                now = datetime.now()
+                combined = f"[{now.strftime('%m/%d')}]: {new_note}\n{curr_h}"
+                # Ghi DB nội bộ
+                conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
+                             (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
+                conn.commit()
+                # Xóa bộ nhớ đệm ô nhập để không lặp và làm mới trang
+                st.session_state[input_key] = ""
+                st.rerun()
 
         with c3:
             with st.popover("⋮"):
