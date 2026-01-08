@@ -62,7 +62,6 @@ def load_data():
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Pipeline Pro", layout="wide")
 
-# Sidebar Add Lead (Giữ nguyên cấu trúc ổn định)
 with st.sidebar:
     st.header("➕ Add Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -87,8 +86,6 @@ with c_refresh:
     if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
 # --- 4. RENDER PIPELINE ---
-st.subheader(f"📋 Working List")
-
 for index, row in df.iterrows():
     sheet_row = index + 2
     with st.container():
@@ -97,26 +94,25 @@ for index, row in df.iterrows():
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
             
-            # --- XỬ LÝ ID & COPY (ÉP THẲNG HÀNG BẰNG CSS) ---
+            # --- XỬ LÝ ID (HIỂN THỊ FULL - CHẠM LÀ COPY) ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # HTML tùy chỉnh: Link CRM và ID nằm trên cùng 1 dòng, nhấn ID là copy
             id_html = f"""
-            <div style="display: flex; align-items: center; gap: 5px; font-size: 14px; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                 <span style="background-color: #7d3c98; color: white; padding: 2px 5px; border-radius: 3px; font-weight: bold; font-size: 10px;">ID</span>
-                <a href="{lead_url}" target="_blank" rel="noreferrer" style="color: #007bff; font-weight: bold; text-decoration: underline;">Link CRM</a>
-                <span style="color: #ccc; margin: 0 5px;">|</span>
-                <span onclick="navigator.clipboard.writeText('{raw_id}'); this.innerText='Copied!'; setTimeout(()=>{{this.innerText='#{raw_id[:8]}...'}}, 1000)" 
-                      style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #f8f9fa; border: 1px dashed #e83e8c; padding: 1px 4px; border-radius: 4px;" 
-                      title="Nhấn để copy mã ID">
-                    #{raw_id[:8]}...
+                <a href="{lead_url}" target="_blank" rel="noreferrer" style="color: #007bff; font-weight: bold; text-decoration: underline; white-space: nowrap;">Link CRM</a>
+                <span style="color: #ccc;">|</span>
+                <span onclick="navigator.clipboard.writeText('{raw_id}'); alert('Đã copy ID: {raw_id}')" 
+                      style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #fff; border: 1px dashed #e83e8c; padding: 2px 6px; border-radius: 4px; white-space: nowrap;" 
+                      title="Nhấn để copy toàn bộ mã ID">
+                    {raw_id}
                 </span>
             </div>
             """
             st.markdown(id_html, unsafe_allow_html=True)
             
-            # --- DÒNG LIÊN LẠC ---
+            # --- LIÊN LẠC ---
             p_cell = str(row['Cellphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
@@ -130,7 +126,6 @@ for index, row in df.iterrows():
             </div>
             """
             st.markdown(comm_html, unsafe_allow_html=True)
-            st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_note:
             st.caption("📝 Ghi chú & Xử lý:")
@@ -150,18 +145,10 @@ for index, row in df.iterrows():
         with c_action:
             st.write("")
             with st.popover("⋮"):
-                st.write("✏️ EDIT")
-                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
-                e_id = st.text_input("ID", value=row['ID'], key=f"ei_{index}")
-                if st.button("Save", key=f"sv_{index}"):
-                    client = get_gs_client()
-                    ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                    ws_e.update_cell(sheet_row, 1, e_name); ws_e.update_cell(sheet_row, 2, e_id)
-                    st.cache_data.clear(); st.rerun()
+                if st.button("Edit", key=f"sv_{index}"): st.write("Dùng sidebar để thêm mới/sửa")
         st.divider()
 
 st.markdown("---")
-st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
 v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
-v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
+v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")s
