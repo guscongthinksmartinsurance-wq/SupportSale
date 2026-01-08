@@ -68,7 +68,7 @@ st.title("🚀 TMC Sales Assistant Tool")
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng")
     n_name = st.text_input("Name KH")
-    n_id = st.text_input("ID (Copy mã từ link CRM)")
+    n_id = st.text_input("ID Lead (Ví dụ: 31cbe...)")
     n_cell = st.text_input("Cellphone")
     n_work = st.text_input("Workphone")
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
@@ -96,19 +96,23 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ (QUAY LẠI CẤU TRÚC 6 CỘT ỔN ĐỊNH) ---
+# --- 4. HIỂN THỊ (CẤU TRÚC ỔN ĐỊNH - FIX LINK CRM) ---
 for index, row in df_display.iterrows():
     with st.container():
-        # Trả lại đúng tỷ lệ 6 cột anh đã duyệt
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
             
-            # GẮN LINK CHO ID (Xử lý dứt điểm: Xóa # và khoảng trắng)
-            raw_id = str(row['ID']).strip().replace('#', '')
-            crm_link = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
-            st.markdown(f"ID: [{row['ID']}]({crm_link})")
+            # XỬ LÝ ID DỨT ĐIỂM ĐỂ VÀO CRM:
+            # 1. Xóa dấu # nếu có
+            # 2. Xóa khoảng trắng
+            # 3. Đưa về chữ thường
+            raw_id = str(row['ID']).strip().replace('#', '').lower()
+            crm_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
+            
+            # Hiển thị ID có link - Nhấn vào là bay thẳng vào Lead
+            st.markdown(f"ID: [{row['ID']}]({crm_url})")
 
         p = str(row['Cellphone']).strip()
         n_enc = urllib.parse.quote(str(row['Name KH']))
@@ -123,7 +127,7 @@ for index, row in df_display.iterrows():
         # NÚT MAIL (mailto: - Đã OK)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
         
-        # NÚT HẸN (link web - Đã OK)
+        # NÚT HẸN (Link web - Đã OK)
         col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
@@ -134,7 +138,7 @@ for index, row in df_display.iterrows():
             st.rerun()
         st.divider()
 
-# --- 5. VIDEO SALES KIT (GIỮ NGUYÊN) ---
+# --- 5. VIDEO SALES KIT (KHÔI PHỤC) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
