@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+import pd
 import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
@@ -61,7 +61,7 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN CHUẨN ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
@@ -96,36 +96,42 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DỨT ĐIỂM (DÙNG LINK THUẦN) ---
+# --- 4. HIỂN THỊ VỚI CÔNG NGHỆ AUTO-CLOSE (DỨT ĐIỂM) ---
 for index, row in df_display.iterrows():
     with st.container():
-        # Chia cột đều để thẳng hàng
-        c_info, c_call, c_sms, c_mail, c_cal, c_done = st.columns([2.5, 1, 1, 1, 1, 1])
-        
-        with c_info:
+        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
+        with col_info:
             st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
         p = str(row['Cellphone']).strip()
         n_enc = urllib.parse.quote(str(row['Name KH']))
-        m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
+        m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em gọi từ TMC...")
 
-        # GIẢI PHÁP CHỐT: Dùng Markdown Link thuần túy. Trình duyệt tin tưởng tuyệt đối.
-        c_call.markdown(f"[📞 GỌI LUÔN](rcapp://call?number={p})")
-        c_sms.markdown(f"[💬 SMS LUÔN](rcapp://sms?number={p}&body={m_enc})")
-        c_mail.markdown(f"[📧 MAIL](mailto:?subject=TMC&body={m_enc})")
-        c_cal.markdown(f"[📅 HẸN](https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc})")
+        # FIX GỐC RỄ: Tạo trang trung gian tự bật App và tự đóng tab
+        call_url = f"rcapp://call?number={p}"
+        sms_url = f"rcapp://sms?number={p}&body={m_enc}"
+        
+        # HTML cho Call
+        call_html = f'''<a href="data:text/html,<html><meta http-equiv='refresh' content='0;url={call_url}'><script>setTimeout(function(){{window.close();}},500);</script><body></body></html>" target="_blank" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>'''
+        col_call.markdown(call_html, unsafe_allow_html=True)
 
-        with c_done:
-            if st.button("XONG ✅", key=f"d_{index}", use_container_width=True):
-                client = get_gs_client()
-                ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                st.cache_data.clear()
-                st.rerun()
+        # HTML cho SMS
+        sms_html = f'''<a href="data:text/html,<html><meta http-equiv='refresh' content='0;url={sms_url}'><script>setTimeout(function(){{window.close();}},500);</script><body></body></html>" target="_blank" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>'''
+        col_sms.markdown(sms_html, unsafe_allow_html=True)
+
+        # MAIL VÀ CALENDAR GIỮ NGUYÊN (VÌ ĐÃ OK)
+        col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
+        col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
+
+        if col_done.button("Xong", key=f"d_{index}"):
+            client = get_gs_client()
+            ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+            ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            st.cache_data.clear()
+            st.rerun()
         st.divider()
 
-# --- 5. VIDEO SALES KIT (GIỮ NGUYÊN) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
