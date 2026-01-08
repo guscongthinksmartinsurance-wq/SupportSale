@@ -51,18 +51,18 @@ def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=300)
 def load_data():
     client = get_gs_client()
     sh = client.open_by_url(SPREADSHEET_URL)
-    data = sh.get_worksheet(0).get_all_records()
-    df = pd.DataFrame(data)
+    ws = sh.get_worksheet(0).get_all_records()
+    df = pd.DataFrame(ws)
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Pipeline Pro", layout="wide")
 
+# Sidebar Add Lead (Giữ nguyên cấu trúc ổn định)
 with st.sidebar:
     st.header("➕ Add Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -76,7 +76,8 @@ with st.sidebar:
         f_note = st.text_area("Initial Note")
         if st.form_submit_button("Save"):
             client = get_gs_client()
-            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0).append_row([f_name, f_id, f_cell, f_work, f_email, f_state, f_status, "", f_note, ""])
+            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+            ws.append_row([f_name, f_id, f_cell, f_work, f_email, f_state, f_status, "", f_note, ""])
             st.cache_data.clear(); st.rerun()
 
 df = load_data()
@@ -85,14 +86,10 @@ with c_filter: days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_refresh: 
     if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
-df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
-mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
-df_display = df[mask]
-
 # --- 4. RENDER PIPELINE ---
-st.subheader(f"📋 Working List ({len(df_display)} leads)")
+st.subheader(f"📋 Working List")
 
-for index, row in df_display.iterrows():
+for index, row in df.iterrows():
     sheet_row = index + 2
     with st.container():
         c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
@@ -100,21 +97,21 @@ for index, row in df_display.iterrows():
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
             
-            # --- XỬ LÝ ID & COPY (HTML TÙY CHỈNH SIÊU GỌN) ---
+            # --- XỬ LÝ ID & COPY (ÉP THẲNG HÀNG BẰNG CSS) ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Mã HTML cho hàng ID: Link CRM + Mã ID nhấn để copy
+            # HTML tùy chỉnh: Link CRM và ID nằm trên cùng 1 dòng, nhấn ID là copy
             id_html = f"""
-            <div style="display: flex; align-items: center; gap: 8px; font-family: sans-serif;">
-                <span style="font-weight: bold; color: #555;">🆔</span>
-                <a href="{lead_url}" target="_blank" rel="noreferrer" style="color: #007bff; font-weight: bold; text-decoration: none;">Link CRM</a>
-                <span style="color: #ccc;">|</span>
-                <code onclick="navigator.clipboard.writeText('{raw_id}'); alert('Đã copy ID: {raw_id}')" 
-                      style="background-color: #f1f3f5; color: #e83e8c; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-family: monospace; border: 1px solid #dee2e6;" 
+            <div style="display: flex; align-items: center; gap: 5px; font-size: 14px; margin-bottom: 8px;">
+                <span style="background-color: #7d3c98; color: white; padding: 2px 5px; border-radius: 3px; font-weight: bold; font-size: 10px;">ID</span>
+                <a href="{lead_url}" target="_blank" rel="noreferrer" style="color: #007bff; font-weight: bold; text-decoration: underline;">Link CRM</a>
+                <span style="color: #ccc; margin: 0 5px;">|</span>
+                <span onclick="navigator.clipboard.writeText('{raw_id}'); this.innerText='Copied!'; setTimeout(()=>{{this.innerText='#{raw_id[:8]}...'}}, 1000)" 
+                      style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #f8f9fa; border: 1px dashed #e83e8c; padding: 1px 4px; border-radius: 4px;" 
                       title="Nhấn để copy mã ID">
                     #{raw_id[:8]}...
-                </code>
+                </span>
             </div>
             """
             st.markdown(id_html, unsafe_allow_html=True)
@@ -125,7 +122,7 @@ for index, row in df_display.iterrows():
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
             comm_html = f"""
-            <div style="display: flex; align-items: center; gap: 15px; margin-top: 8px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
                 <span style="font-size: 15px;">📱 <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
                 <a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">💬</a>
                 <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">📧</a>
