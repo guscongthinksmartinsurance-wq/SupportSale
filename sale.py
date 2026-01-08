@@ -45,7 +45,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CACHE ---
+# --- 2. CACHE (GIỮ NGUYÊN) ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -96,9 +96,10 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ VỚI CẤU TRÚC NÚT MỚI DỨT ĐIỂM ---
+# --- 4. HIỂN THỊ DỨT ĐIỂM NÚT BẤM ---
 for index, row in df_display.iterrows():
     with st.container():
+        # Chia cột chuẩn để thẳng hàng
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         
         with col_info:
@@ -109,14 +110,12 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # FIX DỨT ĐIỂM: Dùng <a> thuần, bỏ CSS phức tạp, target="_self" cho App
-        col_call.markdown(f'''<a href="rcapp://call?number={p}" target="_self"><button style="width:100%; background-color:#28a745; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📞 GỌI</button></a>''', unsafe_allow_html=True)
-        
-        col_sms.markdown(f'''<a href="rcapp://sms?number={p}&body={m_enc}" target="_self"><button style="width:100%; background-color:#17a2b8; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">💬 SMS</button></a>''', unsafe_allow_html=True)
-        
-        col_mail.markdown(f'''<a href="mailto:?subject=TMC&body={m_enc}" target="_self"><button style="width:100%; background-color:#fd7e14; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 MAIL</button></a>''', unsafe_allow_html=True)
-        
-        col_cal.markdown(f'''<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank"><button style="width:100%; background-color:#f4b400; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📅 HẸN</button></a>''', unsafe_allow_html=True)
+        # FIX CHỐT: Dùng cú pháp Markdown Link kết hợp màu của Streamlit (:color[text])
+        # Đây là cách "mềm" nhất để trình duyệt cho phép mở App RingCentral mà không chặn
+        col_call.markdown(f"[**:green[📞 GỌI]**](rcapp://call?number={p})")
+        col_sms.markdown(f"[**:blue[💬 SMS]**](rcapp://sms?number={p}&body={m_enc})")
+        col_mail.markdown(f"[**:orange[📧 MAIL]**](mailto:?subject=TMC&body={m_enc})")
+        col_cal.markdown(f"[**:red[📅 HẸN]**](https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc})")
 
         if col_done.button("Xong", key=f"d_{index}"):
             client = get_gs_client()
@@ -126,6 +125,7 @@ for index, row in df_display.iterrows():
             st.rerun()
         st.divider()
 
+# --- 5. VIDEO (GIỮ NGUYÊN) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
