@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
+import streamlit.components.v1 as components
 
 # --- 1. CẤU HÌNH XÁC THỰC (GIỮ NGUYÊN BẢN ĐÃ CHẠY ĐƯỢC) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
@@ -45,7 +46,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CACHE DỮ LIỆU (GIỮ NGUYÊN) ---
+# --- 2. CACHE DỮ LIỆU ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -61,11 +62,10 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN ---
+# --- 3. GIAO DIỆN CHUẨN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Sidebar
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng")
     n_name = st.text_input("Name KH")
@@ -97,47 +97,49 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DỨT ĐIỂM NÚT BẤM (DÙNG IFRAME ẨN) ---
-# Đoạn mã JavaScript để xử lý mở app không để lại trang trắng
-st.markdown("""
-<script>
-function openApp(url) {
-    var iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = url;
-    document.body.appendChild(iframe);
-    setTimeout(function() {
-        document.body.removeChild(iframe);
-    }, 1000);
-}
-</script>
-""", unsafe_allow_html=True)
+# --- 4. HÀM TẠO NÚT BẤM HTML THẲNG HÀNG & BẬT APP ---
+def create_action_buttons(phone, name, email_body):
+    name_enc = urllib.parse.quote(name)
+    msg_enc = urllib.parse.quote(email_body)
+    
+    # HTML kết hợp CSS để ép 4 nút nằm trên 1 hàng và đều nhau
+    html_code = f"""
+    <div style="display: flex; gap: 10px; align-items: center; width: 100%;">
+        <a href="rcapp://call?number={phone}" target="_parent" style="flex: 1; text-decoration: none;">
+            <div style="background-color: #28a745; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">📞 GỌI</div>
+        </a>
+        <a href="rcapp://sms?number={phone}&body={msg_enc}" target="_parent" style="flex: 1; text-decoration: none;">
+            <div style="background-color: #17a2b8; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">💬 SMS</div>
+        </a>
+        <a href="mailto:?subject=TMC&body={msg_enc}" target="_parent" style="flex: 1; text-decoration: none;">
+            <div style="background-color: #fd7e14; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">📧 MAIL</div>
+        </a>
+        <a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{name_enc}" target="_blank" style="flex: 1; text-decoration: none;">
+            <div style="background-color: #f4b400; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; font-family: sans-serif;">📅 HẸN</div>
+        </a>
+    </div>
+    """
+    return components.html(html_code, height=60)
 
 for index, row in df_display.iterrows():
     with st.container():
-        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
+        col_info, col_actions, col_done = st.columns([2.5, 4.5, 0.6])
+        
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
 
-        p = str(row['Cellphone']).strip()
-        n_enc = urllib.parse.quote(str(row['Name KH']))
-        m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
+        with col_actions:
+            # Gọi hàm tạo nút bấm thẳng hàng
+            create_action_buttons(str(row['Cellphone']).strip(), str(row['Name KH']), f"Chào {row['Name KH']}, em gọi từ TMC...")
 
-        # NÚT BẤM SỬ DỤNG IFRAME ẨN ĐỂ FIX TRANG TRẮNG
-        col_call.markdown(f'<div onclick="openApp(\'rcapp://call?number={p}\')" style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📞 GỌI</div>', unsafe_allow_html=True)
-        col_sms.markdown(f'<div onclick="openApp(\'rcapp://sms?number={p}&body={m_enc}\')" style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">💬 SMS</div>', unsafe_allow_html=True)
-        
-        # GIỮ NGUYÊN MAIL VÀ CALENDAR (ĐÃ OK)
-        col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
-        col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
-
-        if col_done.button("Xong", key=f"d_{index}"):
-            client = get_gs_client()
-            ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-            ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            st.cache_data.clear()
-            st.rerun()
+        with col_done:
+            if st.button("Xong", key=f"d_{index}"):
+                client = get_gs_client()
+                ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+                ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                st.cache_data.clear()
+                st.rerun()
         st.divider()
 
 # --- 5. VIDEO SALES KIT (GIỮ NGUYÊN) ---
