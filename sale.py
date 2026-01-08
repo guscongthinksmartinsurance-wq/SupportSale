@@ -61,25 +61,8 @@ def load_data():
     return df
 
 # --- 3. GIAO DIỆN ---
-st.set_page_config(page_title="TMC Final V2.1", layout="wide")
-st.title("💼 TMC Sales Pipeline - Bản Dứt Điểm Link")
-
-# Sidebar thêm khách
-with st.sidebar:
-    st.header("➕ Add Lead")
-    with st.form("add_form", clear_on_submit=True):
-        f_name = st.text_input("Name KH")
-        f_id = st.text_input("CRM Lead ID")
-        f_cell = st.text_input("Cellphone")
-        f_work = st.text_input("Workphone")
-        f_email = st.text_input("Email")
-        f_state = st.text_input("State")
-        if st.form_submit_button("Save"):
-            client = get_gs_client()
-            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-            ws.append_row([f_name, f_id, f_cell, f_work, f_email, f_state, "New", "", "", ""])
-            st.cache_data.clear()
-            st.rerun()
+st.set_page_config(page_title="TMC Pipeline V2.2", layout="wide")
+st.title("🚀 TMC Pipeline Dashboard")
 
 df = load_data()
 if st.button("🔄 Refresh Data"):
@@ -90,34 +73,37 @@ if st.button("🔄 Refresh Data"):
 for index, row in df.iterrows():
     sheet_row = index + 2
     with st.container():
-        c_info, c_comm, c_note, c_action = st.columns([2.5, 3.5, 3.2, 0.8])
+        c_info, c_comm, c_note, c_action = st.columns([2, 3.5, 3.5, 1])
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
+            # XỬ LÝ ID DỨT ĐIỂM
+            raw_id = str(row['ID']).strip().replace('#', '').lower()
+            lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # XỬ LÝ ID TUYỆT ĐỐI: Xóa #, Xóa khoảng trắng, Chuyển về CHỮ THƯỜNG
-            raw_id = str(row['ID']).strip()
-            clean_id = raw_id.replace('#', '').lower() 
-            
-            lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{clean_id}/overview"
-            
-            st.markdown(f"🆔 ID: [#{clean_id[:8]}...]({lead_url})", help="Mở 7xCRM")
+            # DÙNG NÚT BẤM CHÍNH CHỦ ĐỂ TRÁNH LỖI LINK MARKDOWN
+            st.link_button(f"🆔 Open CRM", lead_url, use_container_width=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
             p = str(row['Cellphone']).strip()
             w = str(row['Workphone']).strip()
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
-            st.write(f"📱 {p} | 📞 {w}")
-            b1, b2, b3 = st.columns(3)
-            b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;">📞 GỌI</div></a>', unsafe_allow_html=True)
-            b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;">💬 SMS</div></a>', unsafe_allow_html=True)
+            
+            st.write(f"📱 Cell: {p}")
+            b1, b2 = st.columns(2)
+            b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;font-weight:bold;">📞 CALL</div></a>', unsafe_allow_html=True)
+            b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
+            
+            st.write(f"📞 Work: {w}")
+            b3, b4 = st.columns(2)
+            b3.markdown(f'<a href="tel:{w}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;font-weight:bold;">📞 CALL</div></a>', unsafe_allow_html=True)
             if row.get('Email'):
-                b3.markdown(f'<a href="mailto:{row["Email"]}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;">📧 MAIL</div></a>', unsafe_allow_html=True)
+                b4.markdown(f'<a href="mailto:{row["Email"]}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:5px;border-radius:5px;text-align:center;font-size:12px;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
 
         with c_note:
-            st.caption("📝 Ghi chú cộng dồn:")
-            st.text_area("Lịch sử", value=row.get('Note',''), height=70, disabled=True, key=f"h_{index}")
+            st.caption("📝 Lịch sử Note:")
+            st.text_area("History", value=row.get('Note',''), height=80, disabled=True, key=f"h_{index}")
             new_n = st.text_input("Note mới...", key=f"in_{index}")
             if st.button("XONG ✅", key=f"done_{index}", use_container_width=True):
                 client = get_gs_client()
@@ -131,6 +117,16 @@ for index, row in df.iterrows():
                 st.rerun()
 
         with c_action:
+            st.write("") # Căn lề
             with st.popover("⋮"):
-                if st.button("Edit", key=f"ed_{index}"): st.write("Tính năng đang mở...")
+                st.subheader("Edit Info")
+                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
+                e_state = st.text_input("State", value=row.get('State',''), key=f"es_{index}")
+                if st.button("Save", key=f"sv_{index}"):
+                    client = get_gs_client()
+                    ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+                    ws_e.update_cell(sheet_row, 1, e_name)
+                    ws_e.update_cell(sheet_row, 6, e_state)
+                    st.cache_data.clear()
+                    st.rerun()
         st.divider()
