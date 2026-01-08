@@ -42,12 +42,12 @@ info = {
 }
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
+# --- 2. HÀM DỮ LIỆU ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=1) # Đặt TTL cực thấp để luôn lấy data mới nhất
 def load_all_data():
     client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
     df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
@@ -57,10 +57,25 @@ def load_all_data():
         df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
     return df_leads, df_links
 
-st.set_page_config(page_title="TMC Master Tool", layout="wide")
+# --- 3. GIAO DIỆN ---
+st.set_page_config(page_title="TMC Advanced Tool", layout="wide")
+
+# Hàm xử lý lưu Note khi nhấn Enter
+def save_note_callback(real_row, old_note, note_key):
+    new_text = st.session_state[note_key]
+    if new_text:
+        client = get_gs_client()
+        ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        combined_note = f"[{now.strftime('%m/%d')}]: {new_text}\n{old_note}"
+        # Cập nhật cột H (8) và I (9)
+        ws.update(range_name=f'H{real_row}:I{real_row}', values=[[timestamp, combined_note[:5000]]])
+        st.toast(f"✅ Đã lưu note!")
+
 df_leads, df_links = load_all_data()
 
-# --- SIDEBAR ---
+# --- SIDEBAR (Giữ nguyên cấu trúc anh duyệt) ---
 with st.sidebar:
     st.title("🛠️ Control Center")
     with st.expander("🔗 Thêm Link / Video Mới"):
@@ -69,7 +84,7 @@ with st.sidebar:
             if st.form_submit_button("Thêm ngay"):
                 if tit and url:
                     client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).worksheet("Links")
-                    ws.append_row([cat, tit, url]); st.cache_data.clear(); st.rerun()
+                    ws.append_row([cat, tit, url]); st.rerun()
 
     with st.expander("🚀 Quick Links", expanded=True):
         q_links = df_links[df_links['Category'] == 'Quick Link']
@@ -85,15 +100,16 @@ with st.sidebar:
             n = st.text_input("Tên KH"); i = st.text_input("ID CRM"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
             if st.form_submit_button("Lưu"):
                 client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                ws.append_row([n, i, p, w, e, s, "New", "", "", ""]); st.cache_data.clear(); st.rerun()
+                ws.append_row([n, i, p, w, e, s, "New", "", "", ""]); st.rerun()
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter: days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 with c_refresh: 
-    if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
+    if st.button("🔄 Refresh Data"): st.rerun()
 
+# Đánh dấu dòng thực tế
 df_leads['real_row'] = range(2, len(df_leads) + 2)
 df_leads['Last_Interact_DT'] = pd.to_datetime(df_leads['Last_Interact'], errors='coerce')
 
@@ -105,7 +121,8 @@ else:
 
 # --- RENDER PIPELINE ---
 for idx, row in df_display.iterrows():
-    real_sheet_row = int(row['real_row'])
+    r_row = int(row['real_row'])
+    n_key = f"input_{idx}"
     with st.container():
         c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
         with c_left:
@@ -121,32 +138,17 @@ for idx, row in df_display.iterrows():
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_note:
-            st.caption("📝 Ghi chú cộng dồn:")
-            st.text_area("History", value=row.get('Note',''), height=80, disabled=True, key=f"h_{idx}")
-            
-            # Ô NHẬP NOTE MỚI - NHẤN ENTER LÀ LƯU
-            new_n = st.text_input("Nhập note mới rồi nhấn Enter...", key=f"in_{idx}", label_visibility="collapsed")
-            if new_n:
-                client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                now = datetime.now()
-                now_str = now.strftime("%Y-%m-%d %H:%M:%S")
-                new_history = f"[{now.strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
-                
-                # Ghi lên Google Sheets
-                ws_u.update(range_name=f'H{real_sheet_row}:I{real_sheet_row}', 
-                          values=[[now_str, new_history[:5000]]])
-                
-                # XÓA CACHE VÀ LÀM MỚI NGAY LẬP TỨC
-                st.cache_data.clear()
-                st.rerun()
+            st.caption("📝 History (Cộng dồn tự động):")
+            st.text_area("History_Box", value=row.get('Note',''), height=100, disabled=True, key=f"h_{idx}", label_visibility="collapsed")
+            # NHẬP VÀ ENTER ĐỂ LƯU
+            st.text_input("Gõ Note mới rồi nhấn Enter", key=n_key, on_change=save_note_callback, args=(r_row, row.get('Note',''), n_key), label_visibility="collapsed", placeholder="Nhập ghi chú mới tại đây...")
 
         with c_action:
             with st.popover("⋮"):
-                st.write("✏️ EDIT LEAD")
+                st.write("✏️ EDIT")
                 e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{idx}"); e_id = st.text_input("ID", value=row['ID'], key=f"ei_{idx}"); e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{idx}"); e_work = st.text_input("Work", value=row.get('Workphone',''), key=f"ew_{idx}"); e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{idx}"); e_state = st.text_input("State", value=row.get('State',''), key=f"es_{idx}")
                 if st.button("Save", key=f"sv_{idx}"):
                     client = get_gs_client(); ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                    ws_e.update(range_name=f'A{real_sheet_row}:F{real_sheet_row}', 
-                              values=[[e_name, e_id, e_cell, e_work, e_email, e_state]])
-                    st.cache_data.clear(); st.rerun()
+                    ws_e.update(range_name=f'A{r_row}:F{r_row}', values=[[e_name, e_id, e_cell, e_work, e_email, e_state]])
+                    st.rerun()
         st.divider()
