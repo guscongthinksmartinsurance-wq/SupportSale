@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
-import streamlit.components.v1 as components
 
 # --- 1. XÁC THỰC (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
@@ -62,11 +61,11 @@ def load_data():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN PIPELINE ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
-# SIDEBAR ADD LEAD
+# SIDEBAR ADD LEAD (KHÔI PHỤC)
 with st.sidebar:
     st.header("➕ Add New Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -88,7 +87,7 @@ with st.sidebar:
 
 df = load_data()
 
-# SLIDER LỌC NGÀY
+# SLIDER LỌC NGÀY (KHÔI PHỤC)
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -101,7 +100,7 @@ df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
 
-# --- 4. RENDER LIST (GIAO DIỆN THẺ ỔN ĐỊNH) ---
+# --- 4. RENDER PIPELINE DẠNG THẺ ---
 st.subheader(f"📋 Working List ({len(df_display)} leads)")
 
 for index, row in df_display.iterrows():
@@ -111,17 +110,20 @@ for index, row in df_display.iterrows():
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            # --- FIX CRM DỨT ĐIỂM BẰNG JAVASCRIPT ---
+            
+            # --- FIX CRM DỨT ĐIỂM ---
+            # Làm sạch ID: Xóa #, xóa khoảng trắng, đưa về chữ thường
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Sử dụng HTML Button + Javascript để ép trình duyệt mở trực tiếp không bị Redirect
-            st.markdown(f"""
-                🆔 ID: <button onclick="window.open('{lead_url}', '_blank', 'noreferrer')" 
-                style="background:none; border:none; color:#007bff; font-weight:bold; cursor:pointer; padding:0; text-decoration:underline;">
-                #{raw_id[:8]}...
-                </button>
-            """, unsafe_allow_html=True)
+            # Dùng thẻ <a> thuần HTML. Đây là cách "mở" link mạnh nhất không bị chặn.
+            st.markdown(f'''
+                <a href="{lead_url}" target="_blank" style="text-decoration: none;">
+                    <button style="background-color: #f0f2f6; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; cursor: pointer; color: #007bff; font-weight: bold;">
+                        🆔 ID: #{raw_id[:8]}...
+                    </button>
+                </a>
+            ''', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
@@ -130,7 +132,7 @@ for index, row in df_display.iterrows():
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
             
             st.write(f"📱 {p}")
-            # KHÔI PHỤC 4 NÚT CHUẨN: GỌI | SMS | MAIL | HẸN (Calendar)
+            # BỘ 4 NÚT CHUẨN (CALL | SMS | MAIL | HẸN)
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -156,7 +158,7 @@ for index, row in df_display.iterrows():
             st.write("")
             with st.popover("⋮"):
                 st.write("✏️ FULL EDIT")
-                # KHÔI PHỤC FULL EDIT 6 TRƯỜNG
+                # FULL EDIT 6 TRƯỜNG (KHÔI PHỤC)
                 e_name = st.text_input("Name KH", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("CRM ID", value=row['ID'], key=f"ei_{index}")
                 e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
@@ -177,7 +179,7 @@ for index, row in df_display.iterrows():
                     st.rerun()
         st.divider()
 
-# --- 5. KHO VIDEO YOUTUBE (GIỮ NGUYÊN) ---
+# KHO VIDEO YOUTUBE (KHÔI PHỤC)
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
