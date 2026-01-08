@@ -20,35 +20,15 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. HÀM XỬ LÝ CRM (LƯU & KÍCH HOẠT LÀM MỚI) ---
-def save_note_realtime(lid, note_key, old_h):
-    text = st.session_state[note_key]
-    if text:
-        now = datetime.now()
-        combined = f"[{now.strftime('%m/%d')}]: {text}\n{old_h}"
-        # Ghi Database
-        cursor = conn.cursor()
-        cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
-                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
-        conn.commit()
-        # Xóa ô nhập và Bật công tắc làm mới
-        st.session_state[note_key] = ""
-        st.session_state["refresh_signal"] = True
-
-# --- 3. GIAO DIỆN ---
+# --- 2. GIAO DIỆN ---
 st.set_page_config(page_title="TMC CRM Pro", layout="wide")
 
-# BỘ CẢM BIẾN TỰ ĐỘNG LÀM MỚI (TRÁNH F5)
-if st.session_state.get("refresh_signal"):
-    st.session_state["refresh_signal"] = False
-    st.rerun()
-
 with st.sidebar:
-    st.title("🛠️ CRM Control")
+    st.title("🛠️ Local CRM Control")
     with st.expander("➕ Add New Lead", expanded=True):
-        with st.form("new_l", clear_on_submit=True):
+        with st.form("new_lead_form", clear_on_submit=True):
             n = st.text_input("Name KH"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work")
-            if st.form_submit_button("Save"):
+            if st.form_submit_button("Lưu Lead"):
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, status, last_interact, note) VALUES (?,?,?,?,?,?,?)', (n, i, p, w, "New", "", ""))
                 conn.commit(); st.rerun()
     
@@ -60,12 +40,11 @@ with st.sidebar:
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
 
-# Đọc dữ liệu (Luôn là bản mới nhất sau khi Rerun)
+# Đọc dữ liệu mới nhất
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 
 for _, row in leads_df.iterrows():
     lid = row['id']
-    input_key = f"in_{lid}"
     curr_h = row['note'] if row['note'] else ""
 
     with st.container():
@@ -88,8 +67,18 @@ for _, row in leads_df.iterrows():
         
         with c2:
             st.text_area("History", value=curr_h, height=120, disabled=True, key=f"view_{lid}", label_visibility="collapsed")
-            # ENTER LÀM MỚI TỨC THÌ QUA CALLBACK
-            st.text_input("Ghi chú mới & Enter", key=input_key, on_change=save_note_realtime, args=(lid, input_key, curr_h), label_visibility="collapsed", placeholder="Nhập note...")
+            
+            # GIẢI PHÁP CRM: Dùng mini-form để Enter là Rerun ngay lập tức
+            with st.form(key=f"note_form_{lid}", clear_on_submit=True):
+                new_msg = st.text_input("Ghi chú mới", label_visibility="collapsed", placeholder="Nhập ghi chú & Enter...")
+                if st.form_submit_button("Lưu Note", help="Nhấn Enter để lưu nhanh"):
+                    if new_msg:
+                        now = datetime.now()
+                        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{curr_h}"
+                        conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
+                                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
+                        conn.commit()
+                        st.rerun() # Form Submit Button ép App phải tải lại dữ liệu mới nhất
 
         with c3:
             if st.button("🗑️", key=f"del_{lid}"):
