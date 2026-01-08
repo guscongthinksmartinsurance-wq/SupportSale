@@ -20,28 +20,24 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. HÀM LƯU NOTE (KHÔNG DÙNG RERUN TRONG NÀY ĐỂ TRÁNH LỖI VÀNG) ---
+# --- 2. HÀM XỬ LÝ LƯU NOTE ---
 def save_note_db(lead_id, note_key, old_note):
     new_text = st.session_state[note_key]
     if new_text:
         now = datetime.now()
         combined = f"[{now.strftime('%m/%d')}]: {new_text}\n{old_note}"
+        # Ghi vào Database
         cursor = conn.cursor()
         cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
                      (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lead_id))
         conn.commit()
-        # Lưu vào một biến cờ để báo hiệu cần rerun ở ngoài
-        st.session_state["needs_rerun"] = True
-        # Xóa sạch ô nhập để sẵn sàng cho lần sau
+        # Cập nhật vào Session State để ép giao diện hiển thị ngay
+        st.session_state[f"force_h_{lead_id}"] = combined
+        # Xóa ô nhập liệu
         st.session_state[note_key] = ""
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC SQLite CRM", layout="wide")
-
-# Kiểm tra nếu cần rerun thì thực hiện ở đây (ngoài callback)
-if st.session_state.get("needs_rerun"):
-    st.session_state["needs_rerun"] = False
-    st.rerun()
 
 with st.sidebar:
     st.title("🛠️ Local Control")
@@ -55,7 +51,7 @@ with st.sidebar:
     with st.expander("🚀 Quick Links", expanded=True):
         for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
     with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['url'])
+        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
     
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
@@ -67,6 +63,8 @@ with st.sidebar:
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
+
+# Đọc dữ liệu từ DB
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
@@ -80,23 +78,27 @@ if days > 0:
 for _, row in leads_df.iterrows():
     lid = row['id']
     k_in = f"in_{lid}"
-    curr_note = row['note'] if row['note'] else ""
+    
+    # CHIẾN THUẬT: Ưu tiên lấy Note từ Session State (mới gõ xong) 
+    # Nếu không có mới lấy từ Database
+    disp_note = st.session_state.get(f"force_h_{lid}", row['note'] if row['note'] else "")
 
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
         with c1:
             st.markdown(f"#### {row['name']}")
-            clean_id = str(row['crm_id']).strip().replace('#', '').lower()
-            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{clean_id}');alert('Copied!')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {clean_id}</span></div>""", unsafe_allow_html=True)
+            rid = str(row['crm_id']).strip().replace('#', '').lower()
+            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied!')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {rid}</span></div>""", unsafe_allow_html=True)
             p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span><a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a><a href="mailto:{row['email']}?body={m_e}">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a></div>""", unsafe_allow_html=True)
             if p_w and p_w not in ['0', '']:
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
         
         with c2:
-            st.text_area("History", value=curr_note, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            # KHI NHẤN ENTER: handle_note_sync sẽ cập nhật DB và báo hiệu rerun
-            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=save_note_db, args=(lid, k_in, curr_note), label_visibility="collapsed", placeholder="Nhập note...")
+            # Ô History hiển thị disp_note (đã được đồng bộ RAM)
+            st.text_area("History", value=disp_note, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
+            # Ô Nhập Note
+            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=save_note_db, args=(lid, k_in, disp_note), label_visibility="collapsed", placeholder="Nhập note...")
 
         with c3:
             with st.popover("⋮"):
