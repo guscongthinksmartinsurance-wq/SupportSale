@@ -96,10 +96,10 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DỨT ĐIỂM NÚT BẤM ---
+# --- 4. HIỂN THỊ VỚI NÚT BẤM CHÍNH CHỦ (DỨT ĐIỂM) ---
 for index, row in df_display.iterrows():
     with st.container():
-        # Chia cột chuẩn để thẳng hàng
+        # Điều chỉnh tỷ lệ cột để thẳng hàng
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         
         with col_info:
@@ -110,14 +110,20 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # FIX CHỐT: Dùng cú pháp Markdown Link kết hợp màu của Streamlit (:color[text])
-        # Đây là cách "mềm" nhất để trình duyệt cho phép mở App RingCentral mà không chặn
-        col_call.markdown(f"[**:green[📞 GỌI]**](rcapp://call?number={p})")
-        col_sms.markdown(f"[**:blue[💬 SMS]**](rcapp://sms?number={p}&body={m_enc})")
-        col_mail.markdown(f"[**:orange[📧 MAIL]**](mailto:?subject=TMC&body={m_enc})")
-        col_cal.markdown(f"[**:red[📅 HẸN]**](https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc})")
+        # FIX CHỐT: Dùng st.link_button (Trình duyệt sẽ cho phép mở App)
+        with col_call:
+            st.link_button("📞 GỌI", f"rcapp://call?number={p}", use_container_width=True)
+        
+        with col_sms:
+            st.link_button("💬 SMS", f"rcapp://sms?number={p}&body={m_enc}", use_container_width=True)
+        
+        with col_mail:
+            st.link_button("📧 MAIL", f"mailto:?subject=TMC&body={m_enc}", use_container_width=True)
+        
+        with col_cal:
+            st.link_button("📅 HẸN", f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}", use_container_width=True)
 
-        if col_done.button("Xong", key=f"d_{index}"):
+        if col_done.button("Xong", key=f"d_{index}", use_container_width=True):
             client = get_gs_client()
             ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
