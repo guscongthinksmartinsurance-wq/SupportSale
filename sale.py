@@ -61,7 +61,7 @@ def load_data():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN CHUẨN ---
+# --- 3. GIAO DIỆN PIPELINE ---
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
@@ -90,7 +90,7 @@ if st.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
-# --- 4. PIPELINE VIEW (KHÔI PHỤC DẠNG THẺ & FIX CRM) ---
+# --- 4. RENDER LIST (GIAO DIỆN THẺ ỔN ĐỊNH) ---
 for index, row in df.iterrows():
     sheet_row = index + 2
     with st.container():
@@ -98,12 +98,12 @@ for index, row in df.iterrows():
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            # FIX LINK CRM: Ép sạch ID để tránh Redirect lỗi
-            clean_id = str(row['ID']).strip().replace('#', '').lower()
-            lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{clean_id}/overview"
+            # --- FIX CRM DỨT ĐIỂM ---
+            raw_id = str(row['ID']).strip().replace('#', '').lower()
+            lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Dùng Markdown thuần để link sạch nhất
-            st.markdown(f"🆔 ID: [#{clean_id[:8]}...]({lead_url})")
+            # Sử dụng referrer-policy để tránh bị CRM redirect về home khi mở từ app khác
+            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
@@ -112,7 +112,7 @@ for index, row in df.iterrows():
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
             
             st.write(f"📱 {p}")
-            # KHÔI PHỤC ĐẦY ĐỦ 4 NÚT: GỌI | SMS | MAIL | HẸN
+            # KHÔI PHỤC 4 NÚT: GỌI | SMS | MAIL | HẸN (Calendar)
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -136,7 +136,7 @@ for index, row in df.iterrows():
 
         with c_action:
             st.write("")
-            # KHÔI PHỤC NÚT EDIT (Dùng popover để sửa tại chỗ)
+            # KHÔI PHỤC NÚT EDIT
             with st.popover("⋮"):
                 st.write("✏️ Edit Lead Info")
                 e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
@@ -155,7 +155,7 @@ for index, row in df.iterrows():
                     st.rerun()
         st.divider()
 
-# --- 5. KHÔI PHỤC KHO VIDEO YOUTUBE ---
+# --- 5. KHÔI PHỤC VIDEO YOUTUBE ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
