@@ -20,24 +20,28 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. HÀM XỬ LÝ LƯU NOTE & TỰ ĐỘNG REFRESH ---
-def handle_note_sync(lead_id, note_key, old_note):
+# --- 2. HÀM LƯU NOTE (KHÔNG DÙNG RERUN TRONG NÀY ĐỂ TRÁNH LỖI VÀNG) ---
+def save_note_db(lead_id, note_key, old_note):
     new_text = st.session_state[note_key]
     if new_text:
         now = datetime.now()
         combined = f"[{now.strftime('%m/%d')}]: {new_text}\n{old_note}"
-        # Cập nhật Database
         cursor = conn.cursor()
         cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
                      (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lead_id))
         conn.commit()
-        # Xóa nội dung trong ô nhập sau khi lưu
+        # Lưu vào một biến cờ để báo hiệu cần rerun ở ngoài
+        st.session_state["needs_rerun"] = True
+        # Xóa sạch ô nhập để sẵn sàng cho lần sau
         st.session_state[note_key] = ""
-        # Lệnh quan trọng: Tự động chạy lại App để cập nhật History ngay lập tức
-        st.rerun()
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC SQLite CRM", layout="wide")
+
+# Kiểm tra nếu cần rerun thì thực hiện ở đây (ngoài callback)
+if st.session_state.get("needs_rerun"):
+    st.session_state["needs_rerun"] = False
+    st.rerun()
 
 with st.sidebar:
     st.title("🛠️ Local Control")
@@ -51,7 +55,7 @@ with st.sidebar:
     with st.expander("🚀 Quick Links", expanded=True):
         for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
     with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
+        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['url'])
     
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
@@ -91,8 +95,8 @@ for _, row in leads_df.iterrows():
         
         with c2:
             st.text_area("History", value=curr_note, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            # KHI NHẤN ENTER: handle_note_sync sẽ được gọi và tự st.rerun()
-            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=handle_note_sync, args=(lid, k_in, curr_note), label_visibility="collapsed", placeholder="Nhập note...")
+            # KHI NHẤN ENTER: handle_note_sync sẽ cập nhật DB và báo hiệu rerun
+            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=save_note_db, args=(lid, k_in, curr_note), label_visibility="collapsed", placeholder="Nhập note...")
 
         with c3:
             with st.popover("⋮"):
