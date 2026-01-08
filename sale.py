@@ -55,8 +55,7 @@ def get_gs_client():
 def load_data():
     client = get_gs_client()
     sh = client.open_by_url(SPREADSHEET_URL)
-    ws = sh.get_worksheet(0)
-    data = ws.get_all_records()
+    data = sh.get_worksheet(0).get_all_records()
     df = pd.DataFrame(data)
     df.columns = [str(col).strip() for col in df.columns]
     return df
@@ -77,24 +76,20 @@ with st.sidebar:
         f_note = st.text_area("Initial Note")
         if st.form_submit_button("Save"):
             client = get_gs_client()
-            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-            ws.append_row([f_name, f_id, f_cell, f_work, f_email, f_state, f_status, "", f_note, ""])
+            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0).append_row([f_name, f_id, f_cell, f_work, f_email, f_state, f_status, "", f_note, ""])
             st.cache_data.clear(); st.rerun()
 
 df = load_data()
-
 c_filter, c_refresh = st.columns([3, 1])
-with c_filter:
-    days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
-with c_refresh:
-    if st.button("🔄 Refresh Data"):
-        st.cache_data.clear(); st.rerun()
+with c_filter: days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
+with c_refresh: 
+    if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
 df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
 
-# --- 4. RENDER PIPELINE SIÊU GỌN ---
+# --- 4. RENDER PIPELINE ---
 st.subheader(f"📋 Working List ({len(df_display)} leads)")
 
 for index, row in df_display.iterrows():
@@ -105,22 +100,32 @@ for index, row in df_display.iterrows():
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
             
-            # --- DÒNG ID & COPY (THẲNG HÀNG SÁT NHAU) ---
+            # --- XỬ LÝ ID & COPY (HTML TÙY CHỈNH SIÊU GỌN) ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            c_id_txt, c_id_cp = st.columns([1, 2.5])
-            c_id_txt.markdown(f'🆔 [**Link CRM**]({lead_url})')
-            # Thẻ copy 1 chạm: Nhấn vào mã là tự copy
-            c_id_cp.code(raw_id, language=None)
+            # Mã HTML cho hàng ID: Link CRM + Mã ID nhấn để copy
+            id_html = f"""
+            <div style="display: flex; align-items: center; gap: 8px; font-family: sans-serif;">
+                <span style="font-weight: bold; color: #555;">🆔</span>
+                <a href="{lead_url}" target="_blank" rel="noreferrer" style="color: #007bff; font-weight: bold; text-decoration: none;">Link CRM</a>
+                <span style="color: #ccc;">|</span>
+                <code onclick="navigator.clipboard.writeText('{raw_id}'); alert('Đã copy ID: {raw_id}')" 
+                      style="background-color: #f1f3f5; color: #e83e8c; padding: 2px 6px; border-radius: 4px; cursor: pointer; font-family: monospace; border: 1px solid #dee2e6;" 
+                      title="Nhấn để copy mã ID">
+                    #{raw_id[:8]}...
+                </code>
+            </div>
+            """
+            st.markdown(id_html, unsafe_allow_html=True)
             
-            # --- DÒNG LIÊN LẠC (ICON SÁT PHONE) ---
+            # --- DÒNG LIÊN LẠC ---
             p_cell = str(row['Cellphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
             comm_html = f"""
-            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 5px;">
+            <div style="display: flex; align-items: center; gap: 15px; margin-top: 8px;">
                 <span style="font-size: 15px;">📱 <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
                 <a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">💬</a>
                 <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">📧</a>
