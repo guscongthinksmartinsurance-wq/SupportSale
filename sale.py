@@ -65,7 +65,7 @@ def load_data():
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
-# KHÔI PHỤC SIDEBAR (KHÔNG ĐỔI)
+# KHÔI PHỤC SIDEBAR ADD LEAD
 with st.sidebar:
     st.header("➕ Add New Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -87,7 +87,7 @@ with st.sidebar:
 
 df = load_data()
 
-# KHÔI PHỤC SLIDER LỌC (KHÔNG ĐỔI)
+# KHÔI PHỤC SLIDER LỌC NGÀY
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -110,18 +110,18 @@ for index, row in df_display.iterrows():
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            # --- CHIẾN THUẬT MỞ LINK CRM MỚI ---
+            # FIX LINK CRM CHỐT HẠ: Nút Copy ID chiến thuật
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Sử dụng Meta Refresh đệm để xóa sạch dấu vết referrer - Giúp CRM không redirect về Home
-            st.markdown(f'''
-                <a href="{lead_url}" target="_blank" rel="noreferrer noopener" style="text-decoration: none;">
-                    <div style="background-color: #f0f2f6; border: 1px solid #007bff; border-radius: 5px; padding: 5px; color: #007bff; font-weight: bold; text-align: center; cursor: pointer;">
-                        🆔 ID: #{raw_id[:8]}...
-                    </div>
-                </a>
-            ''', unsafe_allow_html=True)
+            # Hiển thị ID và Link CRM
+            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" style="color:#007bff;font-weight:bold;text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            
+            # NÚT COPY ID SIÊU TỐC: Nhấn vào là copy mã ID ngay
+            if st.button(f"📋 Copy ID", key=f"cp_{index}", use_container_width=True):
+                st.code(raw_id, language="text")
+                st.toast("Đã hiện mã ID bên trên, anh hãy copy và dán vào CRM!")
+            
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
@@ -129,7 +129,7 @@ for index, row in df_display.iterrows():
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
             st.write(f"📱 {p}")
-            # BỘ 4 NÚT CHUẨN (KHÔNG ĐỔI)
+            # KHÔI PHỤC ĐẦY ĐỦ 4 NÚT CHUẨN: GỌI | SMS | MAIL | HẸN
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -155,7 +155,6 @@ for index, row in df_display.iterrows():
             st.write("")
             with st.popover("⋮"):
                 st.write("✏️ FULL EDIT")
-                # FULL EDIT 6 TRƯỜNG (KHÔNG ĐỔI)
                 e_name = st.text_input("Name KH", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("CRM ID", value=row['ID'], key=f"ei_{index}")
                 e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
@@ -171,7 +170,7 @@ for index, row in df_display.iterrows():
                     st.success("Updated!"); st.cache_data.clear(); st.rerun()
         st.divider()
 
-# KHÔI PHỤC YOUTUBE (KHÔNG ĐỔI)
+# KHÔI PHỤC YOUTUBE
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
