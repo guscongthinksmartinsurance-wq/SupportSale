@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH (GIỮ NGUYÊN) ---
+# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -42,27 +42,31 @@ info = {
     "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
 }
 
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
-creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+# ĐÃ ĐIỀN LINK CỦA ANH VÀO ĐÂY:
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. HÀM KẾT NỐI (TÁCH BIỆT ĐỂ CHỐNG LỖI API) ---
-def get_ws():
-    gc = gspread.authorize(creds)
-    return gc.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+# --- 2. CƠ CHẾ CACHE ĐỂ DỨT ĐIỂM LỖI API ---
+@st.cache_resource
+def get_gsheet_conn():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
+    return gspread.authorize(creds)
 
-# Khởi tạo Session State
-if 'df' not in st.session_state:
-    ws = get_ws()
+@st.cache_data(ttl=600)
+def fetch_data_cached():
+    client = get_gsheet_conn()
+    sh = client.open_by_url(SPREADSHEET_URL)
+    ws = sh.get_worksheet(0)
     data = ws.get_all_records()
     df = pd.DataFrame(data)
-    df.columns = [str(col).strip() for col in df.columns]
-    st.session_state.df = df
+    df.columns = [str(col).strip() for col in df.columns] # Xử lý lỗi tiêu đề
+    return df
 
-# --- 3. GIAO DIỆN ---
+# --- 3. GIAO DIỆN (GIỮ NGUYÊN CẤU TRÚC ANH DUYỆT) ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Sidebar: Đầy đủ 6 cột
+# Sidebar: Thêm khách đầy đủ 6 cột
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng Mới")
     n_name = st.text_input("Name KH")
@@ -73,31 +77,31 @@ with st.sidebar:
     n_sales = st.text_input("Sales Assigned")
     
     if st.button("Lưu khách hàng"):
-        ws = get_ws()
+        client = get_gsheet_conn()
+        ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
         ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
-        st.success("Đã thêm! Hãy nhấn Refresh.")
+        st.cache_data.clear() # Xóa cache để cập nhật dữ liệu mới
+        st.success("Đã thêm khách mới!")
+        st.rerun()
 
-# Bộ lọc Slider & Nút Sync
+# Thanh trượt lọc & Refresh (Dữ liệu chạy trên RAM máy tính)
 c_filter, c_refresh = st.columns([3, 1])
+df = fetch_data_cached()
+
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_refresh:
-    if st.button("🔄 Sync/Refresh Data"):
-        ws = get_ws()
-        data = ws.get_all_records()
-        df_new = pd.DataFrame(data)
-        df_new.columns = [str(col).strip() for col in df_new.columns]
-        st.session_state.df = df_new
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
         st.rerun()
 
-df_work = st.session_state.df.copy()
-df_work['Last_Interact_DT'] = pd.to_datetime(df_work['Last_Interact'], errors='coerce')
-mask = (df_work['Last_Interact_DT'].isna()) | ((datetime.now() - df_work['Last_Interact_DT']).dt.days >= days)
-df_display = df_work[mask]
+# Logic lọc trên RAM
+df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
+mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
+df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ & FIX NÚT BẤM ---
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
@@ -111,21 +115,23 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # FIX SMS & CALL: Dùng HTML thuần với mã hóa cứng để ép app RingCentral mở
+        # NÚT BẬT APP (Dùng target="_self" để kích hoạt RingCentral)
         col_call.markdown(f'<a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
         col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
         col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
-            ws = get_ws()
+            client = get_gsheet_conn()
+            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            st.rerun() # Không Sync tự động để tránh lỗi Quota
+            st.cache_data.clear()
+            st.rerun()
         st.divider()
 
-# --- 5. VIDEO SALES KIT ---
+# --- 4. VIDEO (GIỮ NGUYÊN) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
-v1, v2 = st.columns(2)
-v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4") 
-v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
+v_col1, v_col2 = st.columns(2)
+v_col1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
+v_col2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
