@@ -96,24 +96,7 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# CSS để ép các nút thẳng hàng và đẹp
-st.markdown("""
-<style>
-    .action-btn {
-        display: block;
-        width: 100%;
-        padding: 10px 5px;
-        text-align: center;
-        color: white !important;
-        font-weight: bold;
-        text-decoration: none;
-        border-radius: 5px;
-        font-size: 14px;
-        margin-bottom: 5px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
+# --- 4. HIỂN THỊ VỚI CẤU TRÚC NÚT MỚI DỨT ĐIỂM ---
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
@@ -126,11 +109,14 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # FIX: Dùng target="_top" để bật App RingCentral và CSS .action-btn để thẳng hàng
-        col_call.markdown(f'<a href="rcapp://call?number={p}" target="_top" class="action-btn" style="background-color:#28a745;">📞 GỌI</a>', unsafe_allow_html=True)
-        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_top" class="action-btn" style="background-color:#17a2b8;">💬 SMS</a>', unsafe_allow_html=True)
-        col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_top" class="action-btn" style="background-color:#fd7e14;">📧 MAIL</a>', unsafe_allow_html=True)
-        col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" class="action-btn" style="background-color:#f4b400;">📅 HẸN</a>', unsafe_allow_html=True)
+        # FIX DỨT ĐIỂM: Dùng <a> thuần, bỏ CSS phức tạp, target="_self" cho App
+        col_call.markdown(f'''<a href="rcapp://call?number={p}" target="_self"><button style="width:100%; background-color:#28a745; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📞 GỌI</button></a>''', unsafe_allow_html=True)
+        
+        col_sms.markdown(f'''<a href="rcapp://sms?number={p}&body={m_enc}" target="_self"><button style="width:100%; background-color:#17a2b8; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">💬 SMS</button></a>''', unsafe_allow_html=True)
+        
+        col_mail.markdown(f'''<a href="mailto:?subject=TMC&body={m_enc}" target="_self"><button style="width:100%; background-color:#fd7e14; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 MAIL</button></a>''', unsafe_allow_html=True)
+        
+        col_cal.markdown(f'''<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank"><button style="width:100%; background-color:#f4b400; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📅 HẸN</button></a>''', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
             client = get_gs_client()
