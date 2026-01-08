@@ -45,25 +45,24 @@ info = {
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit?gid=0#gid=0"
 creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
 
-# --- 2. HÀM ĐỒNG BỘ DỮ LIỆU (CỰC KỲ QUAN TRỌNG) ---
-def fetch_data():
-    client = gspread.authorize(creds)
-    sh = client.open_by_url(SPREADSHEET_URL)
-    ws = sh.get_worksheet(0)
+# --- 2. HÀM KẾT NỐI (TÁCH BIỆT ĐỂ CHỐNG LỖI API) ---
+def get_ws():
+    gc = gspread.authorize(creds)
+    return gc.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+
+# Khởi tạo Session State
+if 'df' not in st.session_state:
+    ws = get_ws()
     data = ws.get_all_records()
     df = pd.DataFrame(data)
-    df.columns = [str(col).strip() for col in df.columns] # Xử lý lỗi tiêu đề (strip)
-    return df, ws
+    df.columns = [str(col).strip() for col in df.columns]
+    st.session_state.df = df
 
-# Khởi tạo dữ liệu vào Session State (Chỉ chạy 1 lần khi mở Web)
-if 'main_df' not in st.session_state:
-    st.session_state.main_df, st.session_state.main_ws = fetch_data()
-
-# --- 3. GIAO DIỆN (GIỮ NGUYÊN CẤU TRÚC ĐÃ OK) ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Sidebar: Thêm khách đầy đủ 6 cột
+# Sidebar: Đầy đủ 6 cột
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng Mới")
     n_name = st.text_input("Name KH")
@@ -74,29 +73,31 @@ with st.sidebar:
     n_sales = st.text_input("Sales Assigned")
     
     if st.button("Lưu khách hàng"):
-        st.session_state.main_ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
-        st.session_state.main_df, st.session_state.main_ws = fetch_data() # Cập nhật lại
-        st.success("Đã thêm khách mới!")
-        st.rerun()
+        ws = get_ws()
+        ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
+        st.success("Đã thêm! Hãy nhấn Refresh.")
 
-# Thanh trượt lọc & Refresh (Dùng dữ liệu từ RAM)
+# Bộ lọc Slider & Nút Sync
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_refresh:
-    if st.button("🔄 Refresh Data"):
-        st.session_state.main_df, st.session_state.main_ws = fetch_data()
+    if st.button("🔄 Sync/Refresh Data"):
+        ws = get_ws()
+        data = ws.get_all_records()
+        df_new = pd.DataFrame(data)
+        df_new.columns = [str(col).strip() for col in df_new.columns]
+        st.session_state.df = df_new
         st.rerun()
 
-# Lấy dữ liệu từ RAM để hiển thị
-df = st.session_state.main_df
-df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
-mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
-df_display = df[mask]
+df_work = st.session_state.df.copy()
+df_work['Last_Interact_DT'] = pd.to_datetime(df_work['Last_Interact'], errors='coerce')
+mask = (df_work['Last_Interact_DT'].isna()) | ((datetime.now() - df_work['Last_Interact_DT']).dt.days >= days)
+df_display = df_work[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DANH SÁCH & NÚT BẬT APP ---
+# --- 4. HIỂN THỊ & FIX NÚT BẤM ---
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
@@ -110,25 +111,21 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # NÚT BẤM MÀU SẮC (Dứt điểm SMS và Call)
+        # FIX SMS & CALL: Dùng HTML thuần với mã hóa cứng để ép app RingCentral mở
         col_call.markdown(f'<a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
         col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
-        
-        gcal = f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}"
-        col_cal.markdown(f'<a href="{gcal}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
+        col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            st.session_state.main_ws.update_cell(index + 2, 6, now_str)
-            st.session_state.main_df, st.session_state.main_ws = fetch_data() # Cập nhật lại ngăn chứa
-            st.rerun()
+            ws = get_ws()
+            ws.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            st.rerun() # Không Sync tự động để tránh lỗi Quota
         st.divider()
 
-# --- 5. KHO VIDEO ---
+# --- 5. VIDEO SALES KIT ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
 v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4") 
 v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
-
