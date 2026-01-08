@@ -48,15 +48,24 @@ def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=10) # Cache ngắn để thấy thay đổi ngay
+@st.cache_data(ttl=10)
 def load_all_data():
     client = get_gs_client()
     sh = client.open_by_url(SPREADSHEET_URL)
+    # Load Leads (Sheet 1)
     df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
+    
+    # Load hoặc Tự tạo Sheet Links nếu chưa có
     try:
-        df_links = pd.DataFrame(sh.worksheet("Links").get_all_records())
-    except:
+        ws_l = sh.worksheet("Links")
+        data = ws_l.get_all_records()
+        df_links = pd.DataFrame(data) if data else pd.DataFrame(columns=["Category", "Title", "URL"])
+    except gspread.exceptions.WorksheetNotFound:
+        # Nếu chưa có sheet Links, tự tạo mới với tiêu đề chuẩn
+        ws_l = sh.add_worksheet(title="Links", rows="100", cols="3")
+        ws_l.append_row(["Category", "Title", "URL"])
         df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
+    
     return df_leads, df_links
 
 # --- 3. GIAO DIỆN ---
@@ -66,88 +75,87 @@ df_leads, df_links = load_all_data()
 with st.sidebar:
     st.title("🛠️ Control Center")
     
-    # --- MỤC 1: QUẢN LÝ LINK (THÊM TRỰC TIẾP) ---
+    # --- MỤC 1: THÊM LINK (CHỖ ANH MUỐN TỰ TAY ADD) ---
     with st.expander("🔗 Thêm Link / Video Mới", expanded=True):
-        with st.form("link_form", clear_on_submit=True):
-            l_cat = st.selectbox("Phân loại", ["Quick Link", "Sales Kit"])
-            l_title = st.text_input("Tiêu đề (VD: CRM Home)")
-            l_url = st.text_input("Đường dẫn (URL)")
+        with st.form("add_link_form", clear_on_submit=True):
+            cat = st.selectbox("Loại", ["Quick Link", "Sales Kit"])
+            tit = st.text_input("Tiêu đề")
+            url = st.text_input("Đường dẫn (URL)")
             if st.form_submit_button("Thêm ngay"):
-                client = get_gs_client()
-                sh = client.open_by_url(SPREADSHEET_URL)
-                try:
-                    ws_l = sh.worksheet("Links")
-                except:
-                    ws_l = sh.add_worksheet(title="Links", rows="100", cols="3")
-                    ws_l.append_row(["Category", "Title", "URL"])
-                
-                ws_l.append_row([l_cat, l_title, l_url])
-                st.cache_data.clear()
-                st.success("Đã thêm thành công!")
-                st.rerun()
+                if tit and url:
+                    client = get_gs_client()
+                    ws = client.open_by_url(SPREADSHEET_URL).worksheet("Links")
+                    ws.append_row([cat, tit, url])
+                    st.cache_data.clear()
+                    st.success("Đã thêm!")
+                    st.rerun()
+                else:
+                    st.error("Vui lòng nhập đủ tên và link")
 
     # --- MỤC 2: HIỂN THỊ QUICK LINKS ---
     with st.expander("🚀 Quick Links", expanded=True):
-        q_links = df_links[df_links['Category'] == 'Quick Link']
-        for _, l in q_links.iterrows():
-            st.markdown(f"**[{l['Title']}]({l['URL']})**")
+        if not df_links.empty and 'Category' in df_links.columns:
+            q_links = df_links[df_links['Category'] == 'Quick Link']
+            for _, l in q_links.iterrows():
+                st.markdown(f"**[{l['Title']}]({l['URL']})**")
+        else:
+            st.write("Chưa có link nào.")
 
     # --- MỤC 3: HIỂN THỊ SALES KIT ---
     with st.expander("📚 Sales Kit (Video)"):
-        videos = df_links[df_links['Category'] == 'Sales Kit']
-        for _, v in videos.iterrows():
-            st.caption(v['Title'])
-            st.video(v['URL'])
+        if not df_links.empty and 'Category' in df_links.columns:
+            videos = df_links[df_links['Category'] == 'Sales Kit']
+            for _, v in videos.iterrows():
+                st.caption(v['Title'])
+                st.video(v['URL'])
 
     st.divider()
-    # MỤC 4: THÊM LEAD (SIDEBAR)
+    # MỤC 4: THÊM LEAD
     with st.expander("➕ Add New Lead"):
-        with st.form("add_lead"):
-            n = st.text_input("Name KH")
+        with st.form("new_lead"):
+            n = st.text_input("Tên KH")
             i = st.text_input("ID CRM")
-            p = st.text_input("Phone")
-            if st.form_submit_button("Lưu Lead"):
+            p = st.text_input("SĐT")
+            if st.form_submit_button("Lưu"):
                 client = get_gs_client()
                 ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 ws.append_row([n, i, p, "", "", "", "New", "", "", ""])
                 st.cache_data.clear(); st.rerun()
 
-# --- MAIN VIEW PIPELINE ---
+# --- MAIN VIEW PIPELINE (SIÊU GỌN) ---
 st.title("💼 Pipeline Processing")
 
-# --- RENDER PIPELINE ---
 for index, row in df_leads.iterrows():
     sheet_row = index + 2
     with st.container():
         c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
-            # COPY ID
             raw_id = str(row['ID']).strip().replace('#', '').lower()
+            # Nút copy tinh tế
             id_html = f"""
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                 <span style="background-color: #7d3c98; color: white; padding: 1px 4px; border-radius: 3px; font-weight: bold; font-size: 10px;">ID</span>
                 <span onclick="navigator.clipboard.writeText('{raw_id}'); alert('Copied ID: {raw_id}')" 
                       style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #f8f9fa; border: 1px dashed #e83e8c; padding: 2px 6px; border-radius: 4px;">
-                    📋 {raw_id}
+                    📋 {raw_id if raw_id else 'No-ID'}
                 </span>
             </div>
             """
             st.markdown(id_html, unsafe_allow_html=True)
-            phone = str(row['Cellphone']).strip()
-            st.markdown(f'📱 <a href="tel:{phone}" style="color:#28a745; font-weight:bold; text-decoration:none;">{phone}</a>', unsafe_allow_html=True)
+            p = str(row['Cellphone']).strip()
+            st.markdown(f'📱 <a href="tel:{p}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p}</a>', unsafe_allow_html=True)
 
         with c_note:
             st.caption("📝 Ghi chú:")
             st.text_area("History", value=row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
             c_in, c_btn = st.columns([3, 1])
-            new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
+            new_n = c_in.text_input("Note...", key=f"in_{index}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{index}"):
                 client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 ws_u.update_cell(sheet_row, 9, f"[{datetime.now().strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}")
                 st.cache_data.clear(); st.rerun()
 
         with c_action:
-            with st.popover("⋮"):
-                st.write("Edit Mode")
+            with st.popover("⋮"): st.info("Edit mode")
         st.divider()
