@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
+import streamlit.components.v1 as components
 
 # --- 1. XÁC THỰC (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
@@ -61,10 +62,11 @@ def load_data():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN CHÍNH ---
+# --- 3. GIAO DIỆN PIPELINE ---
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
+# SIDEBAR ADD LEAD
 with st.sidebar:
     st.header("➕ Add New Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -85,6 +87,8 @@ with st.sidebar:
             st.rerun()
 
 df = load_data()
+
+# SLIDER LỌC NGÀY
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -97,30 +101,36 @@ df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
 
-# --- 4. RENDER PIPELINE (GIỮ NGUYÊN BỐ CỤC THẺ) ---
+# --- 4. RENDER LIST (GIAO DIỆN THẺ ỔN ĐỊNH) ---
 st.subheader(f"📋 Working List ({len(df_display)} leads)")
 
 for index, row in df_display.iterrows():
     sheet_row = index + 2
     with st.container():
-        c_info, c_comm, c_note, c_action = st.columns([2.2, 3.8, 3.2, 0.8])
+        c_info, c_comm, c_note, c_action = st.columns([2.5, 3.5, 3.2, 0.8])
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            # --- FIX LINK CRM DỨT ĐIỂM ---
+            # --- FIX CRM DỨT ĐIỂM BẰNG JAVASCRIPT ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Sử dụng giải pháp rel="noreferrer" để CRM không đẩy link về home
-            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff;font-weight:bold;text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            # Sử dụng HTML Button + Javascript để ép trình duyệt mở trực tiếp không bị Redirect
+            st.markdown(f"""
+                🆔 ID: <button onclick="window.open('{lead_url}', '_blank', 'noreferrer')" 
+                style="background:none; border:none; color:#007bff; font-weight:bold; cursor:pointer; padding:0; text-decoration:underline;">
+                #{raw_id[:8]}...
+                </button>
+            """, unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
             p = str(row['Cellphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
+            
             st.write(f"📱 {p}")
-            # BỘ 4 NÚT CHUẨN (CALL | SMS | MAIL | HẸN)
+            # KHÔI PHỤC 4 NÚT CHUẨN: GỌI | SMS | MAIL | HẸN (Calendar)
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -146,9 +156,10 @@ for index, row in df_display.iterrows():
             st.write("")
             with st.popover("⋮"):
                 st.write("✏️ FULL EDIT")
+                # KHÔI PHỤC FULL EDIT 6 TRƯỜNG
                 e_name = st.text_input("Name KH", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("CRM ID", value=row['ID'], key=f"ei_{index}")
-                e_cell = st.text_input("Cellphone", value=row['Cellphone'], key=f"ec_{index}")
+                e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
                 e_work = st.text_input("Workphone", value=row.get('Workphone',''), key=f"ew_{index}")
                 e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{index}")
                 e_state = st.text_input("State", value=row.get('State',''), key=f"es_{index}")
@@ -161,6 +172,7 @@ for index, row in df_display.iterrows():
                     ws_e.update_cell(sheet_row, 4, e_work)
                     ws_e.update_cell(sheet_row, 5, e_email)
                     ws_e.update_cell(sheet_row, 6, e_state)
+                    st.success("Updated!")
                     st.cache_data.clear()
                     st.rerun()
         st.divider()
