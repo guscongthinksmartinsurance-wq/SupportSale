@@ -36,10 +36,13 @@ UvNQNXmUy4VQRI8i9CHtAZdp
 -----END PRIVATE KEY-----"""
 
 info = {
-    "type": "service_account", "project_id": "caramel-hallway-481517-q8",
-    "private_key": PK_RAW.strip(), "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
+    "type": "service_account",
+    "project_id": "caramel-hallway-481517-q8",
+    "private_key": PK_RAW.strip(),
+    "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
     "token_uri": "https://oauth2.googleapis.com/token",
 }
+
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
 # --- 2. HÀM DỮ LIỆU ---
@@ -49,9 +52,11 @@ def get_gs_client():
     return gspread.authorize(creds)
 
 def load_data():
-    client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
+    client = get_gs_client()
+    sh = client.open_by_url(SPREADSHEET_URL)
     ws = sh.get_worksheet(0).get_all_records()
-    df = pd.DataFrame(ws); df.columns = [str(col).strip() for col in df.columns]
+    df = pd.DataFrame(ws)
+    df.columns = [str(col).strip() for col in df.columns]
     return df
 
 # --- 3. GIAO DIỆN ---
@@ -60,11 +65,15 @@ st.set_page_config(page_title="TMC Pipeline Pro", layout="wide")
 with st.sidebar:
     st.header("➕ Add Lead")
     with st.form("add_form", clear_on_submit=True):
-        f_name = st.text_input("Name KH"); f_id = st.text_input("CRM Lead ID")
-        f_cell = st.text_input("Cellphone"); f_work = st.text_input("Workphone")
-        f_email = st.text_input("Email"); f_state = st.text_input("State")
+        f_name = st.text_input("Name KH")
+        f_id = st.text_input("CRM Lead ID")
+        f_cell = st.text_input("Cellphone")
+        f_work = st.text_input("Workphone")
+        f_email = st.text_input("Email")
+        f_state = st.text_input("State")
         if st.form_submit_button("Save"):
-            client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+            client = get_gs_client()
+            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws.append_row([f_name, f_id, f_cell, f_work, f_email, f_state, "New", "", "", ""])
             st.cache_data.clear(); st.rerun()
 
@@ -72,7 +81,7 @@ df = load_data()
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter: days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_refresh: 
-    if st.button("🔄 Refresh"): st.cache_data.clear(); st.rerun()
+    if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
 # --- 4. RENDER PIPELINE ---
 for index, row in df.iterrows():
@@ -83,28 +92,36 @@ for index, row in df.iterrows():
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
             
-            # --- DÒNG ID (FIX ĐỒNG NHẤT NÚT COPY) ---
+            # --- XỬ LÝ ID & COPY SÁT NHAU (FULL HTML/JS) ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            c_id_label, c_id_link, c_id_copy = st.columns([0.5, 1.2, 2.3])
-            c_id_label.markdown("**🆔 ID:**")
-            c_id_link.markdown(f"[Link CRM]({lead_url})")
-            # Nút Copy đồng nhất cho mọi dòng
-            if c_id_copy.button(f"📋 {raw_id if raw_id else 'No ID'}", key=f"cp_{index}", help="Nhấn để hiện mã copy"):
-                st.info(f"Mã của {row['Name KH']}:")
-                st.code(raw_id)
+            # HTML: Ép ID nằm sát Link CRM trên cùng 1 dòng
+            id_html = f"""
+            <div style="display: flex; align-items: center; gap: 5px; font-size: 14px; margin-bottom: 8px;">
+                <span style="background-color: #7d3c98; color: white; padding: 1px 4px; border-radius: 3px; font-weight: bold; font-size: 10px;">ID</span>
+                <a href="{lead_url}" target="_blank" rel="noreferrer" style="color: #007bff; font-weight: bold; text-decoration: underline; white-space: nowrap;">Link CRM</a>
+                <span style="color: #ccc; margin: 0 2px;">|</span>
+                <span onclick="navigator.clipboard.writeText('{raw_id}'); alert('Đã copy ID: {raw_id}')" 
+                      style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #f8f9fa; border: 1px dashed #e83e8c; padding: 1px 6px; border-radius: 4px; white-space: nowrap;" 
+                      title="Nhấn để copy mã ID">
+                    📋 {raw_id}
+                </span>
+            </div>
+            """
+            st.markdown(id_html, unsafe_allow_html=True)
             
-            # --- DÒNG LIÊN LẠC ---
+            # --- LIÊN LẠC ---
             p = str(row['Cellphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
+
             comm_html = f"""
-            <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px;">
-                <span>📱 <a href="tel:{p}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p}</a></span>
-                <a href="rcmobile://sms?number={p}&body={m_enc}" target="_self">💬</a>
-                <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self">📧</a>
-                <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_enc}" target="_blank">📅</a>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span style="font-size: 15px;">📱 <a href="tel:{p}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p}</a></span>
+                <a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">💬</a>
+                <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">📧</a>
+                <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_enc}" target="_blank" style="text-decoration:none; font-size:18px;">📅</a>
             </div>
             """
             st.markdown(comm_html, unsafe_allow_html=True)
@@ -116,7 +133,8 @@ for index, row in df.iterrows():
             c_in, c_btn = st.columns([3, 1])
             new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{index}"):
-                client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+                client = get_gs_client()
+                ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 now = datetime.now()
                 ws_u.update_cell(sheet_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
                 if new_n:
@@ -125,11 +143,13 @@ for index, row in df.iterrows():
                 st.cache_data.clear(); st.rerun()
 
         with c_action:
+            st.write("")
             with st.popover("⋮"):
                 if st.button("Edit", key=f"ed_{index}"): st.write("Dùng sidebar để sửa")
         st.divider()
 
-st.subheader("🎬 Video Sales Kit")
+st.markdown("---")
+st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
 v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
 v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
