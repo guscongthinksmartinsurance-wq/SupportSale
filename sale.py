@@ -45,7 +45,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CACHE DỮ LIỆU (GIỮ NGUYÊN) ---
+# --- 2. CACHE ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -96,7 +96,7 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ CHI TIẾT ---
+# --- 4. HIỂN THỊ (CHỈ SỬA LÕI SMS) ---
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
@@ -109,16 +109,17 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # NÚT GỌI (GIỮ NGUYÊN - ĐÃ OK)
+        # NÚT GỌI (GIỮ NGUYÊN)
         col_call.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
         
-        # NÚT SMS (SỬA ĐÚNG CÁI NÀY - DÙNG GIAO THỨC RCAPP ĐỂ ÉP BẬT RINGCENTRAL)
-        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
+        # NÚT SMS (DÙNG DEEP LINK RIÊNG CỦA RINGCENTRAL: rcmobile:// hoặc rcapp://)
+        # Em sử dụng rcmobile:// vì nó là lệnh chuẩn nhất để bật giao diện SMS trên RingCentral Desktop
+        col_sms.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
         
-        # NÚT MAIL (GIỮ NGUYÊN - ĐÃ OK)
+        # NÚT MAIL (GIỮ NGUYÊN)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
         
-        # NÚT HẸN (GIỮ NGUYÊN - ĐÃ OK)
+        # NÚT HẸN (GIỮ NGUYÊN)
         col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
