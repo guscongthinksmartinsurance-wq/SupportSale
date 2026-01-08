@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. XÁC THỰC (GIỮ NGUYÊN) ---
+# --- 1. XÁC THỰC ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -57,59 +57,57 @@ def load_all_data():
         df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
     return df_leads, df_links
 
-# Hàm xử lý Lưu Note: Ép App ghi nhận vào bộ nhớ TRƯỚC khi ghi Sheet
-def save_note_final(idx, r_row, old_h, key):
-    new_msg = st.session_state[key]
-    if new_msg:
+# Hàm lưu Note Optimistic (Tự tin cập nhật)
+def optimistic_save(idx, r_row, old_h, key):
+    txt = st.session_state[key]
+    if txt:
         now = datetime.now()
-        new_h = f"[{now.strftime('%m/%d')}]: {new_msg}\n{old_h}"
-        
-        # CẬP NHẬT NGAY VÀO BỘ NHỚ APP (Chìa khóa nằm ở đây)
-        st.session_state[f"force_h_{idx}"] = new_h
-        
-        # Ghi vào Sheet (Chạy ngầm, App không thèm đợi nó)
+        new_h = f"[{now.strftime('%m/%d')}]: {txt}\n{old_h}"
+        # Ghi Sheet
         client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
         ws.update_cell(r_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
         ws.update_cell(r_row, 9, new_h[:5000])
-        st.toast("✅ Đã ghi nhận Note!")
+        # Cập nhật Session State để App "vẽ" lại ngay
+        st.session_state[f"last_note_{idx}"] = new_h
+        st.toast("✅ Đã lưu History!")
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC CRM Pro", layout="wide")
-
-# Chỉ load dữ liệu 1 lần khi bắt đầu hoặc nhấn Refresh
-if 'main_df' not in st.session_state or st.sidebar.button("🔄 Sync Google Sheet"):
-    leads, links = load_all_data()
-    st.session_state.main_df = leads
-    st.session_state.links_df = links
+df_leads, df_links = load_all_data()
 
 with st.sidebar:
     st.title("🛠️ Control Center")
-    with st.expander("🚀 Quick Links", expanded=True):
-        for _, l in st.session_state.links_df[st.session_state.links_df['Category'] == 'Quick Link'].iterrows():
-            st.markdown(f"**[{l['Title']}]({l['URL']})**")
-    with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in st.session_state.links_df[st.session_state.links_df['Category'] == 'Sales Kit'].iterrows():
-            st.caption(v['Title']); st.video(v['URL'])
-    st.divider()
-    with st.expander("➕ Add New Lead"):
+    with st.expander("🔗 Add Link / Video"):
         with st.form("add_l"):
+            c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
+            if st.form_submit_button("Lưu"):
+                get_gs_client().open_by_url(SPREADSHEET_URL).worksheet("Links").append_row([c, t, u]); st.rerun()
+
+    with st.expander("🚀 Quick Links", expanded=True):
+        for _, l in df_links[df_links['Category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['Title']}]({l['URL']})**")
+    with st.expander("📚 Sales Kit", expanded=True):
+        for _, v in df_links[df_links['Category'] == 'Sales Kit'].iterrows(): st.caption(v['Title']); st.video(v['URL'])
+    
+    st.divider()
+    with st.expander("➕ Add New Lead", expanded=True):
+        with st.form("new_lead"):
             n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
             if st.form_submit_button("Save"):
-                ws = get_gs_client().open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                ws.append_row([n, i, p, w, e, s, "New", "", "", ""]); st.rerun()
+                get_gs_client().open_by_url(SPREADSHEET_URL).get_worksheet(0).append_row([n, i, p, w, e, s, "New", "", "", ""]); st.rerun()
 
 # --- MAIN VIEW ---
-df = st.session_state.main_df
-df['real_row'] = range(2, len(df) + 2)
-df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
-
+st.title("💼 Pipeline Processing")
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
-df_disp = df if days == 0 else df[(df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)]
+if st.button("🔄 Sync & Refresh"): st.rerun()
+
+df_leads['real_row'] = range(2, len(df_leads) + 2)
+df_leads['Last_Interact_DT'] = pd.to_datetime(df_leads['Last_Interact'], errors='coerce')
+df_disp = df_leads if days == 0 else df_leads[(df_leads['Last_Interact_DT'].isna()) | ((datetime.now() - df_leads['Last_Interact_DT']).dt.days >= days)]
 
 for idx, row in df_disp.iterrows():
     r_row = int(row['real_row'])
-    # Lấy history từ bộ nhớ App (nếu có) hoặc từ dữ liệu gốc
-    h_val = st.session_state.get(f"force_h_{idx}", row.get('Note',''))
+    # LUÔN ƯU TIÊN HIỂN THỊ TỪ SESSION STATE NẾU CÓ DỮ LIỆU MỚI
+    h_disp = st.session_state.get(f"last_note_{idx}", row.get('Note',''))
     
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
@@ -123,8 +121,8 @@ for idx, row in df_disp.iterrows():
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
         
         with c2:
-            st.text_area("History", value=h_val, height=100, disabled=True, key=f"area_{idx}", label_visibility="collapsed")
-            st.text_input("Ghi chú mới & Enter", key=f"in_{idx}", on_change=save_note_final, args=(idx, r_row, h_val, f"in_{idx}"), label_visibility="collapsed")
+            st.text_area("History", value=h_disp, height=120, disabled=True, key=f"area_{idx}", label_visibility="collapsed")
+            st.text_input("Ghi chú mới & Enter", key=f"in_{idx}", on_change=optimistic_save, args=(idx, r_row, h_disp, f"in_{idx}"), label_visibility="collapsed", placeholder="Note mới...")
 
         with c3:
             with st.popover("⋮"):
