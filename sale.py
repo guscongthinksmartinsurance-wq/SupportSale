@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. XÁC THỰC ---
+# --- 1. XÁC THỰC (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -65,7 +65,6 @@ def load_data():
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
-# SIDEBAR ADD LEAD
 with st.sidebar:
     st.header("➕ Add New Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -86,8 +85,6 @@ with st.sidebar:
             st.rerun()
 
 df = load_data()
-
-# SLIDER LỌC NGÀY
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -100,7 +97,9 @@ df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
 
-# --- 4. RENDER PIPELINE ---
+# --- 4. RENDER PIPELINE (GIỮ NGUYÊN BỐ CỤC THẺ) ---
+st.subheader(f"📋 Working List ({len(df_display)} leads)")
+
 for index, row in df_display.iterrows():
     sheet_row = index + 2
     with st.container():
@@ -108,11 +107,12 @@ for index, row in df_display.iterrows():
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            # FIX CRM: Làm sạch ID và ép trình duyệt mở trực tiếp
+            # --- FIX LINK CRM DỨT ĐIỂM ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
-            # Thêm referrerpolicy="no-referrer" để tránh bị CRM redirect về home
-            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer noopener" referrerpolicy="no-referrer" style="color:#007bff;font-weight:bold;text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            
+            # Sử dụng giải pháp rel="noreferrer" để CRM không đẩy link về home
+            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff;font-weight:bold;text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
@@ -120,7 +120,7 @@ for index, row in df_display.iterrows():
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
             st.write(f"📱 {p}")
-            # BỘ 4 NÚT
+            # BỘ 4 NÚT CHUẨN (CALL | SMS | MAIL | HẸN)
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -146,15 +146,13 @@ for index, row in df_display.iterrows():
             st.write("")
             with st.popover("⋮"):
                 st.write("✏️ FULL EDIT")
-                # CHO PHÉP EDIT TOÀN BỘ CÁC TRƯỜNG QUAN TRỌNG
                 e_name = st.text_input("Name KH", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("CRM ID", value=row['ID'], key=f"ei_{index}")
                 e_cell = st.text_input("Cellphone", value=row['Cellphone'], key=f"ec_{index}")
                 e_work = st.text_input("Workphone", value=row.get('Workphone',''), key=f"ew_{index}")
                 e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{index}")
                 e_state = st.text_input("State", value=row.get('State',''), key=f"es_{index}")
-                
-                if st.button("Save All Changes", key=f"sv_{index}"):
+                if st.button("Save Changes", key=f"sv_{index}"):
                     client = get_gs_client()
                     ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                     ws_e.update_cell(sheet_row, 1, e_name)
@@ -163,12 +161,11 @@ for index, row in df_display.iterrows():
                     ws_e.update_cell(sheet_row, 4, e_work)
                     ws_e.update_cell(sheet_row, 5, e_email)
                     ws_e.update_cell(sheet_row, 6, e_state)
-                    st.success("Updated!")
                     st.cache_data.clear()
                     st.rerun()
         st.divider()
 
-# KHO VIDEO YOUTUBE
+# --- 5. KHO VIDEO YOUTUBE (GIỮ NGUYÊN) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
