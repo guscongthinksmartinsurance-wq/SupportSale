@@ -45,7 +45,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CƠ CHẾ CACHE (GIỮ NGUYÊN) ---
+# --- 2. CACHE ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -61,12 +61,12 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN (GIỮ NGUYÊN) ---
+# --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
 with st.sidebar:
-    st.header("➕ Thêm Khách Hàng Mới")
+    st.header("➕ Thêm Khách Hàng")
     n_name = st.text_input("Name KH")
     n_id = st.text_input("ID")
     n_cell = st.text_input("Cellphone")
@@ -96,9 +96,28 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
+# CSS để ép các nút thẳng hàng và đẹp
+st.markdown("""
+<style>
+    .action-btn {
+        display: block;
+        width: 100%;
+        padding: 10px 5px;
+        text-align: center;
+        color: white !important;
+        font-weight: bold;
+        text-decoration: none;
+        border-radius: 5px;
+        font-size: 14px;
+        margin-bottom: 5px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
+        
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
@@ -107,18 +126,11 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # --- CHỈ SỬA ĐÚNG PHẦN NÀY ĐỂ BẬT APP RINGCENTRAL ---
-        # Sử dụng window.location.assign để ép trình duyệt gọi app mà không nhảy tab
-        
-        call_html = f'<div onclick="window.location.assign(\'rcapp://call?number={p}\')" style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📞 GỌI</div>'
-        col_call.markdown(call_html, unsafe_allow_html=True)
-
-        sms_html = f'<div onclick="window.location.assign(\'rcapp://sms?number={p}&body={m_enc}\')" style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">💬 SMS</div>'
-        col_sms.markdown(sms_html, unsafe_allow_html=True)
-
-        # GIỮ NGUYÊN MAIL VÀ HẸN (VÌ ĐÃ OK)
-        col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
-        col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
+        # FIX: Dùng target="_top" để bật App RingCentral và CSS .action-btn để thẳng hàng
+        col_call.markdown(f'<a href="rcapp://call?number={p}" target="_top" class="action-btn" style="background-color:#28a745;">📞 GỌI</a>', unsafe_allow_html=True)
+        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_top" class="action-btn" style="background-color:#17a2b8;">💬 SMS</a>', unsafe_allow_html=True)
+        col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_top" class="action-btn" style="background-color:#fd7e14;">📧 MAIL</a>', unsafe_allow_html=True)
+        col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" class="action-btn" style="background-color:#f4b400;">📅 HẸN</a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
             client = get_gs_client()
@@ -128,7 +140,6 @@ for index, row in df_display.iterrows():
             st.rerun()
         st.divider()
 
-# --- 4. VIDEO (GIỮ NGUYÊN) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
