@@ -50,13 +50,11 @@ def get_gs_client():
 
 @st.cache_data(ttl=10)
 def load_all_data():
-    client = get_gs_client()
-    sh = client.open_by_url(SPREADSHEET_URL)
+    client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
     df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
     try:
         ws_l = sh.worksheet("Links")
-        data = ws_l.get_all_records()
-        df_links = pd.DataFrame(data) if data else pd.DataFrame(columns=["Category", "Title", "URL"])
+        df_links = pd.DataFrame(ws_l.get_all_records())
     except:
         df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
     return df_leads, df_links
@@ -67,73 +65,65 @@ df_leads, df_links = load_all_data()
 
 with st.sidebar:
     st.title("🛠️ Control Center")
-    
-    # MỤC 1: THÊM LINK (CHỖ ANH MUỐN TỰ TAY ADD)
-    with st.expander("🔗 Thêm Link / Video Mới", expanded=False):
+    # MỤC QUẢN LÝ LINK
+    with st.expander("🔗 Thêm Link / Video Mới"):
         with st.form("add_link_form", clear_on_submit=True):
             cat = st.selectbox("Loại", ["Quick Link", "Sales Kit"])
             tit = st.text_input("Tiêu đề")
             url = st.text_input("Đường dẫn (URL)")
             if st.form_submit_button("Thêm ngay"):
                 if tit and url:
-                    client = get_gs_client()
-                    ws = client.open_by_url(SPREADSHEET_URL).worksheet("Links")
+                    client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).worksheet("Links")
                     ws.append_row([cat, tit, url])
                     st.cache_data.clear(); st.success("Đã thêm!"); st.rerun()
 
-    # MỤC 2: HIỂN THỊ QUICK LINKS
     with st.expander("🚀 Quick Links", expanded=True):
         q_links = df_links[df_links['Category'] == 'Quick Link']
-        for _, l in q_links.iterrows():
-            st.markdown(f"**[{l['Title']}]({l['URL']})**")
+        for _, l in q_links.iterrows(): st.markdown(f"**[{l['Title']}]({l['URL']})**")
 
-    # MỤC 3: HIỂN THỊ SALES KIT
     with st.expander("📚 Sales Kit (Video)"):
         videos = df_links[df_links['Category'] == 'Sales Kit']
-        for _, v in videos.iterrows():
-            st.caption(v['Title'])
-            st.video(v['URL'])
+        for _, v in videos.iterrows(): st.caption(v['Title']); st.video(v['URL'])
 
     st.divider()
-    # MỤC 4: THÊM LEAD (PHỤC HỒI ĐẦY ĐỦ CÁC TRƯỜNG)
     with st.expander("➕ Add New Lead", expanded=True):
         with st.form("new_lead"):
-            n = st.text_input("Tên KH")
-            i = st.text_input("ID CRM")
-            p = st.text_input("Cellphone")
-            w = st.text_input("Workphone")
-            e = st.text_input("Email")
-            s = st.text_input("State")
+            n = st.text_input("Tên KH"); i = st.text_input("ID CRM"); p = st.text_input("Cellphone")
+            w = st.text_input("Workphone"); e = st.text_input("Email"); s = st.text_input("State")
             if st.form_submit_button("Lưu Lead"):
-                client = get_gs_client()
-                ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+                client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 ws.append_row([n, i, p, w, e, s, "New", "", "", ""])
                 st.cache_data.clear(); st.rerun()
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
 
-# PHỤC HỒI THANH SLIDER LỌC NGÀY
+# CẬP NHẬT SLIDER TỪ 0 ĐẾN 90 NGÀY
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
-    days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
+    days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0) # Mặc định là 0 để hiện hết
 with c_refresh: 
     if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
-# Logic lọc ngày
+# Logic lọc ngày chính xác
 df_leads['Last_Interact_DT'] = pd.to_datetime(df_leads['Last_Interact'], errors='coerce')
-mask = (df_leads['Last_Interact_DT'].isna()) | ((datetime.now() - df_leads['Last_Interact_DT']).dt.days >= days)
-df_display = df_leads[mask]
+now = datetime.now()
+# Nếu slider = 0, hiện tất cả. Nếu > 0, lọc theo số ngày.
+if days == 0:
+    df_display = df_leads
+else:
+    mask = (df_leads['Last_Interact_DT'].isna()) | ((now - df_leads['Last_Interact_DT']).dt.days >= days)
+    df_display = df_leads[mask]
 
-# --- 4. RENDER PIPELINE (PHỤC HỒI ĐẦY ĐỦ GIAO DIỆN) ---
+# --- 4. RENDER PIPELINE ---
+st.subheader(f"📋 Danh sách xử lý ({len(df_display)} khách)")
+
 for index, row in df_display.iterrows():
     sheet_row = index + 2
     with st.container():
         c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
-        
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
-            # Nút copy ID tinh tế
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             id_html = f"""
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
@@ -145,13 +135,10 @@ for index, row in df_display.iterrows():
             </div>
             """
             st.markdown(id_html, unsafe_allow_html=True)
-            
-            # PHỤC HỒI LIÊN LẠC (GỌI + BỘ 3 ICON: SMS, MAIL, HẸN)
             p_cell = str(row['Cellphone']).strip()
             p_work = str(row.get('Workphone','')).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
-
             comm_html = f"""
             <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px;">
                 <span style="font-size: 15px;">📱 <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
@@ -161,10 +148,8 @@ for index, row in df_display.iterrows():
             </div>
             """
             st.markdown(comm_html, unsafe_allow_html=True)
-            
-            if p_work and p_work != '0' and p_work != '':
+            if p_work and p_work not in ['0', '']:
                 st.markdown(f'📞 Work: <a href="tel:{p_work}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_work}</a>', unsafe_allow_html=True)
-            
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_note:
@@ -174,16 +159,14 @@ for index, row in df_display.iterrows():
             new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{index}"):
                 client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                now = datetime.now()
-                ws_u.update_cell(sheet_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ws_u.update_cell(sheet_row, 8, now_str) # Cập nhật Last Interact
                 if new_n:
-                    combined = f"[{now.strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
-                    ws_u.update_cell(sheet_row, 9, combined[:5000])
+                    combined = f"[{datetime.now().strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
+                    ws_u.update_cell(sheet_row, 9, combined[:5000]) # Cập nhật Note
                 st.cache_data.clear(); st.rerun()
 
         with c_action:
-            st.write("")
-            # PHỤC HỒI NÚT EDIT FULL THÔNG TIN
             with st.popover("⋮"):
                 st.write("✏️ EDIT LEAD")
                 e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
