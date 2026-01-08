@@ -20,7 +20,7 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. HÀM XỬ LÝ LƯU NOTE TỨC THÌ ---
+# --- 2. HÀM XỬ LÝ LƯU NOTE & TỰ ĐỘNG REFRESH ---
 def handle_note_sync(lead_id, note_key, old_note):
     new_text = st.session_state[note_key]
     if new_text:
@@ -31,9 +31,10 @@ def handle_note_sync(lead_id, note_key, old_note):
         cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
                      (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lead_id))
         conn.commit()
-        # Ép cập nhật bộ nhớ tạm của App để hiển thị ngay
-        st.session_state[f"live_h_{lead_id}"] = combined
-        st.toast("✅ Đã lưu!")
+        # Xóa nội dung trong ô nhập sau khi lưu
+        st.session_state[note_key] = ""
+        # Lệnh quan trọng: Tự động chạy lại App để cập nhật History ngay lập tức
+        st.rerun()
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC SQLite CRM", layout="wide")
@@ -50,7 +51,7 @@ with st.sidebar:
     with st.expander("🚀 Quick Links", expanded=True):
         for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
     with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['url'])
+        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
     
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
@@ -75,8 +76,7 @@ if days > 0:
 for _, row in leads_df.iterrows():
     lid = row['id']
     k_in = f"in_{lid}"
-    # Lấy note từ RAM (mới nhất) hoặc Database
-    disp_note = st.session_state.get(f"live_h_{lid}", row['note'])
+    curr_note = row['note'] if row['note'] else ""
 
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
@@ -90,16 +90,16 @@ for _, row in leads_df.iterrows():
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
         
         with c2:
-            st.text_area("History", value=disp_note, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            # NHẬP VÀ ENTER: Xử lý tức thì không thông qua Google
-            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=handle_note_sync, args=(lid, k_in, disp_note), label_visibility="collapsed", placeholder="Nhập note...")
+            st.text_area("History", value=curr_note, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
+            # KHI NHẤN ENTER: handle_note_sync sẽ được gọi và tự st.rerun()
+            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=handle_note_sync, args=(lid, k_in, curr_note), label_visibility="collapsed", placeholder="Nhập note...")
 
         with c3:
             with st.popover("⋮"):
                 en = st.text_input("Name", value=row['name'], key=f"en_{lid}")
                 ec = st.text_input("Cell", value=row['cell'], key=f"ec_{lid}")
                 ew = st.text_input("Work", value=row['work'], key=f"ew_{lid}")
-                if st.button("Save", key=f"sv_{lid}"):
+                if st.button("Save Edit", key=f"sv_{lid}"):
                     conn.execute('UPDATE leads SET name=?, cell=?, work=? WHERE id=?', (en, ec, ew, lid))
                     conn.commit(); st.rerun()
         st.divider()
