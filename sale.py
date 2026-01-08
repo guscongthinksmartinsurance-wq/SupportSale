@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH XÁC THỰC (GIỮ NGUYÊN BẢN CHẠY ĐƯỢC) ---
+# --- 1. CẤU HÌNH XÁC THỰC (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -45,7 +45,7 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CACHE DỮ LIỆU (CHỐNG LỖI API) ---
+# --- 2. CACHE DỮ LIỆU ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -61,7 +61,7 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN ---
+# --- 3. GIAO DIỆN CHUẨN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
@@ -96,12 +96,10 @@ df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
-# --- 4. HIỂN THỊ DỨT ĐIỂM (FIX THẲNG HÀNG & BẬT APP) ---
+# --- 4. HIỂN THỊ DỨT ĐIỂM (BẢN SỬA LỖI TRANG TRẮNG) ---
 for index, row in df_display.iterrows():
     with st.container():
-        # Chia cột đều để ép thẳng hàng
-        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.2, 1, 1, 1, 1, 0.8])
-        
+        col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
         with col_info:
             st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']}")
@@ -110,13 +108,18 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chào {row['Name KH']}, em gọi từ TMC...")
 
-        # DÙNG st.link_button: Đây là cách chính chủ, thẳng hàng và ít bị trình duyệt chặn nhất
-        col_call.link_button("📞 GỌI", f"rcapp://call?number={p}", use_container_width=True)
-        col_sms.link_button("💬 SMS", f"rcapp://sms?number={p}&body={m_enc}", use_container_width=True)
-        col_mail.link_button("📧 MAIL", f"mailto:?subject=TMC&body={m_enc}", use_container_width=True)
-        col_cal.link_button("📅 HẸN", f"https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}", use_container_width=True)
+        # GIẢI PHÁP DỨT ĐIỂM: Sử dụng HTML nhúng với target="_top" để kích hoạt App ngay tại cửa sổ hiện tại
+        # Cách này ép trình duyệt gọi giao thức hệ thống mà không cần mở tab mới
+        
+        col_call.markdown(f'''<a href="rcapp://call?number={p}" target="_top" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📞 GỌI</div></a>''', unsafe_allow_html=True)
+        
+        col_sms.markdown(f'''<a href="rcapp://sms?number={p}&body={m_enc}" target="_top" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>''', unsafe_allow_html=True)
 
-        if col_done.button("Xong", key=f"d_{index}", use_container_width=True):
+        col_mail.markdown(f'''<a href="mailto:?subject=TMC&body={m_enc}" target="_top" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>''', unsafe_allow_html=True)
+
+        col_cal.markdown(f'''<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>''', unsafe_allow_html=True)
+
+        if col_done.button("Xong", key=f"d_{index}"):
             client = get_gs_client()
             ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -124,7 +127,7 @@ for index, row in df_display.iterrows():
             st.rerun()
         st.divider()
 
-# --- 5. VIDEO SALES KIT ---
+# --- 5. VIDEO SALES KIT (GIỮ NGUYÊN) ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
