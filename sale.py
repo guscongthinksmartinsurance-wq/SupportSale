@@ -48,13 +48,13 @@ def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=5)
 def load_all_data():
     client = get_gs_client(); sh = client.open_by_url(SPREADSHEET_URL)
+    # Lead Data
     df_leads = pd.DataFrame(sh.get_worksheet(0).get_all_records())
+    # Link Data
     try:
-        ws_l = sh.worksheet("Links")
-        df_links = pd.DataFrame(ws_l.get_all_records())
+        df_links = pd.DataFrame(sh.worksheet("Links").get_all_records())
     except:
         df_links = pd.DataFrame(columns=["Category", "Title", "URL"])
     return df_leads, df_links
@@ -68,13 +68,11 @@ with st.sidebar:
     with st.expander("🔗 Thêm Link / Video Mới"):
         with st.form("add_link_form", clear_on_submit=True):
             cat = st.selectbox("Loại", ["Quick Link", "Sales Kit"])
-            tit = st.text_input("Tiêu đề")
-            url = st.text_input("Đường dẫn (URL)")
+            tit = st.text_input("Tiêu đề"); url = st.text_input("URL")
             if st.form_submit_button("Thêm ngay"):
                 if tit and url:
                     client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).worksheet("Links")
-                    ws.append_row([cat, tit, url])
-                    st.cache_data.clear(); st.success("Đã thêm!"); st.rerun()
+                    ws.append_row([cat, tit, url]); st.cache_data.clear(); st.rerun()
 
     with st.expander("🚀 Quick Links", expanded=True):
         q_links = df_links[df_links['Category'] == 'Quick Link']
@@ -87,22 +85,22 @@ with st.sidebar:
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
         with st.form("new_lead"):
-            n = st.text_input("Tên KH"); i = st.text_input("ID CRM"); p = st.text_input("Cellphone")
-            w = st.text_input("Workphone"); e = st.text_input("Email"); s = st.text_input("State")
-            if st.form_submit_button("Lưu Lead"):
+            n = st.text_input("Tên KH"); i = st.text_input("ID CRM"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
+            if st.form_submit_button("Lưu"):
                 client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                ws.append_row([n, i, p, w, e, s, "New", "", "", ""])
-                st.cache_data.clear(); st.rerun()
+                ws.append_row([n, i, p, w, e, s, "New", "", "", ""]); st.cache_data.clear(); st.rerun()
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
 c_filter, c_refresh = st.columns([3, 1])
-with c_filter:
-    days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
+with c_filter: days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 with c_refresh: 
     if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
 
+# ĐÁNH DẤU SỐ DÒNG THỰC TẾ (QUAN TRỌNG ĐỂ KHÔNG GHI NHẦM)
+df_leads['real_row'] = range(2, len(df_leads) + 2)
 df_leads['Last_Interact_DT'] = pd.to_datetime(df_leads['Last_Interact'], errors='coerce')
+
 if days == 0:
     df_display = df_leads
 else:
@@ -110,68 +108,50 @@ else:
     df_display = df_leads[mask]
 
 # --- 4. RENDER PIPELINE ---
-for index, row in df_display.iterrows():
-    sheet_row = index + 2
+for idx, row in df_display.iterrows():
+    real_sheet_row = int(row['real_row']) # Dùng đúng số dòng thực tế trên Excel
     with st.container():
         c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
             raw_id = str(row['ID']).strip().replace('#', '').lower()
-            id_html = f"""
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="background-color: #7d3c98; color: white; padding: 1px 4px; border-radius: 3px; font-weight: bold; font-size: 10px;">ID</span>
-                <span onclick="navigator.clipboard.writeText('{raw_id}'); alert('Copied ID: {raw_id}')" 
-                      style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #f8f9fa; border: 1px dashed #e83e8c; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
-                    📋 {raw_id}
-                </span>
-            </div>
-            """
+            id_html = f"""<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span style="background-color: #7d3c98; color: white; padding: 1px 4px; border-radius: 3px; font-weight: bold; font-size: 10px;">ID</span><span onclick="navigator.clipboard.writeText('{raw_id}'); alert('Copied ID: {raw_id}')" style="color: #e83e8c; cursor: pointer; font-family: monospace; font-weight: bold; background: #f8f9fa; border: 1px dashed #e83e8c; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">📋 {raw_id}</span></div>"""
             st.markdown(id_html, unsafe_allow_html=True)
-            p_cell = str(row['Cellphone']).strip()
-            p_work = str(row.get('Workphone','')).strip()
+            p_cell = str(row['Cellphone']).strip(); p_work = str(row.get('Workphone','')).strip()
             n_enc = urllib.parse.quote(str(row['Name KH'])); m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
-            comm_html = f"""
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <span>📱 <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
-                <a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self">💬</a>
-                <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self">📧</a>
-                <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_enc}" target="_blank">📅</a>
-            </div>
-            """
+            comm_html = f"""<div style="display: flex; align-items: center; gap: 15px;"><span>📱 <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span><a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self">💬</a><a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_enc}" target="_blank">📅</a></div>"""
             st.markdown(comm_html, unsafe_allow_html=True)
-            if p_work and p_work not in ['0', '']:
-                st.markdown(f'📞 Work: <a href="tel:{p_work}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_work}</a>', unsafe_allow_html=True)
+            if p_work and p_work not in ['0', '']: st.markdown(f'📞 Work: <a href="tel:{p_work}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_work}</a>', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_note:
             st.caption("📝 Ghi chú cộng dồn:")
-            st.text_area("History", value=row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
+            st.text_area("History", value=row.get('Note',''), height=65, disabled=True, key=f"h_{idx}")
             c_in, c_btn = st.columns([3, 1])
-            new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
-            if c_btn.button("XONG ✅", key=f"done_{index}"):
+            new_n = c_in.text_input("Note mới...", key=f"in_{idx}", label_visibility="collapsed")
+            if c_btn.button("XONG ✅", key=f"done_{idx}"):
                 client = get_gs_client(); ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 now = datetime.now()
-                # Cập nhật cột 8 (Last Interact)
-                ws_u.update_cell(sheet_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
-                # Cập nhật cột 9 (Note)
+                # Ghi chuẩn vào đúng dòng real_sheet_row
+                ws_u.update_cell(real_sheet_row, 8, now.strftime("%Y-%m-%d %H:%M:%S"))
                 if new_n:
                     combined = f"[{now.strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
-                    ws_u.update_cell(sheet_row, 9, combined[:5000])
+                    ws_u.update_cell(real_sheet_row, 9, combined[:5000])
                 st.cache_data.clear(); st.rerun()
 
         with c_action:
             with st.popover("⋮"):
                 st.write("✏️ EDIT LEAD")
-                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
-                e_id = st.text_input("ID", value=row['ID'], key=f"ei_{index}")
-                e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
-                e_work = st.text_input("Work", value=row.get('Workphone',''), key=f"ew_{index}")
-                e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{index}")
-                e_state = st.text_input("State", value=row.get('State',''), key=f"es_{index}")
-                if st.button("Save", key=f"sv_{index}"):
+                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{idx}")
+                e_id = st.text_input("ID", value=row['ID'], key=f"ei_{idx}")
+                e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{idx}")
+                e_work = st.text_input("Work", value=row.get('Workphone',''), key=f"ew_{idx}")
+                e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{idx}")
+                e_state = st.text_input("State", value=row.get('State',''), key=f"es_{idx}")
+                if st.button("Save", key=f"sv_{idx}"):
                     client = get_gs_client(); ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                    ws_e.update_cell(sheet_row, 1, e_name); ws_e.update_cell(sheet_row, 2, e_id)
-                    ws_e.update_cell(sheet_row, 3, e_cell); ws_e.update_cell(sheet_row, 4, e_work)
-                    ws_e.update_cell(sheet_row, 5, e_email); ws_e.update_cell(sheet_row, 6, e_state)
+                    ws_e.update_cell(real_sheet_row, 1, e_name); ws_e.update_cell(real_sheet_row, 2, e_id)
+                    ws_e.update_cell(real_sheet_row, 3, e_cell); ws_e.update_cell(real_sheet_row, 4, e_work)
+                    ws_e.update_cell(real_sheet_row, 5, e_email); ws_e.update_cell(real_sheet_row, 6, e_state)
                     st.cache_data.clear(); st.rerun()
         st.divider()
