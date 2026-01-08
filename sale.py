@@ -57,20 +57,18 @@ def load_data_raw():
         links = pd.DataFrame(columns=["Category", "Title", "URL"])
     return leads, links
 
-# Hàm lưu Note mới
+# Hàm xử lý lưu Note (Cơ chế CRM: Hiện lên App trước, ghi Sheet sau)
 def save_note_optimistic(real_row, current_note, note_key, idx):
     new_text = st.session_state[note_key]
     if new_text:
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
         combined = f"[{now.strftime('%m/%d')}]: {new_text}\n{current_note}"
-        
         # 1. Ghi Sheet
         client = get_gs_client(); ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
         ws.update_cell(real_row, 8, timestamp)
         ws.update_cell(real_row, 9, combined[:5000])
-        
-        # 2. Cập nhật Session State để App hiện ngay
+        # 2. Cập nhật session_state để hiện ngay lập tức
         st.session_state[f"live_note_{idx}"] = combined
         st.toast("✅ Đã lưu History!")
 
@@ -94,8 +92,9 @@ with st.sidebar:
     
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
-        with st.form("new_l"):
-            n = st.text_input("Tên"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
+        with st.form("new_lead"):
+            n = st.text_input("Name KH"); i = st.text_input("ID CRM"); p = st.text_input("Cellphone")
+            w = st.text_input("Workphone"); e = st.text_input("Email"); s = st.text_input("State")
             if st.form_submit_button("Save Lead"):
                 ws = get_gs_client().open_by_url(SPREADSHEET_URL).get_worksheet(0)
                 ws.append_row([n, i, p, w, e, s, "New", "", "", ""]); st.rerun()
@@ -114,8 +113,7 @@ df_disp = df_leads if days == 0 else df_leads[(df_leads['Last_Interact_DT'].isna
 # --- RENDER PIPELINE ---
 for idx, row in df_disp.iterrows():
     r_row = int(row['real_row']); k_in = f"in_{idx}"
-    
-    # Ưu tiên lấy Note từ session_state (vừa mới gõ) thay vì từ Dataframe (cũ)
+    # Lấy note "nóng" từ session_state nếu có, nếu không lấy từ row
     current_val = st.session_state.get(f"live_note_{idx}", row.get('Note',''))
 
     with st.container():
@@ -123,17 +121,16 @@ for idx, row in df_disp.iterrows():
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
             rid = str(row['ID']).strip().replace('#', '').lower()
-            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied: {rid}')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {rid}</span></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied ID: {rid}')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {rid}</span></div>""", unsafe_allow_html=True)
             p_c = str(row['Cellphone']).strip(); p_w = str(row.get('Workphone','')).strip(); n_e = urllib.parse.quote(str(row['Name KH'])); m_e = urllib.parse.quote(f"Chao {row['Name KH']}...")
-            st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_cell if (p_cell:=p_c) else ""}</a></span><a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a><a href="mailto:{row.get('Email','')}?body={m_e}">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span><a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a><a href="mailto:{row.get('Email','')}?body={m_e}">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a></div>""", unsafe_allow_html=True)
             if p_w and p_w not in ['0', '']:
                 st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
         
         with c_note:
             st.text_area("History", value=current_val, height=100, disabled=True, key=f"h_{idx}", label_visibility="collapsed")
-            # NHẬP VÀ ENTER
-            st.text_input("Gõ Note mới & Enter", key=k_in, on_change=save_note_optimistic, args=(r_row, current_val, k_in, idx), label_visibility="collapsed", placeholder="Nhập ghi chú...")
+            st.text_input("Ghi chú mới & Enter", key=k_in, on_change=save_note_optimistic, args=(r_row, current_val, k_in, idx), label_visibility="collapsed", placeholder="Nhập ghi chú...")
 
         with c_action:
             with st.popover("⋮"):
