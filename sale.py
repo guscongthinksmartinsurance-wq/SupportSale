@@ -65,7 +65,7 @@ def load_data():
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
-# SIDEBAR (GIỮ NGUYÊN)
+# SIDEBAR ADD LEAD
 with st.sidebar:
     st.header("➕ Add New Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -87,7 +87,7 @@ with st.sidebar:
 
 df = load_data()
 
-# SLIDER LỌC NGÀY (GIỮ NGUYÊN)
+# SLIDER LỌC NGÀY
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -110,26 +110,28 @@ for index, row in df_display.iterrows():
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            
-            # --- LINK CRM GỌN GÀNG ---
+            # Link ID CRM
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
-            
-            # Sử dụng rel="noreferrer" để ép CRM nhận diện link trực tiếp
             st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff;font-weight:bold;text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
-            p = str(row['Cellphone']).strip()
+            p_cell = str(row['Cellphone']).strip()
+            p_work = str(row['Workphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
-            st.write(f"📱 {p}")
-            # BỘ 4 NÚT CHUẨN: GỌI | SMS | MAIL | HẸN
-            b1, b2, b3, b4 = st.columns(4)
-            b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
-            b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
-            b3.markdown(f'<a href="mailto:{row.get("Email","")}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📧 MAIL</div></a>', unsafe_allow_html=True)
-            b4.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📅 HẸN</div></a>', unsafe_allow_html=True)
+            
+            # --- BIẾN SỐ ĐIỆN THOẠI THÀNH LINK GỌI ---
+            st.markdown(f'📱 Cell: <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; font-size:16px;">{p_cell}</a>', unsafe_allow_html=True)
+            if p_work and p_work != '0':
+                st.markdown(f'📞 Work: <a href="tel:{p_work}" style="color:#28a745; font-weight:bold;">{p_work}</a>', unsafe_allow_html=True)
+            
+            # CÁC NÚT CÒN LẠI (SMS | MAIL | HẸN)
+            b1, b2, b3 = st.columns(3)
+            b1.markdown(f'<a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:6px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
+            b2.markdown(f'<a href="mailto:{row.get("Email","")}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:6px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📧 MAIL</div></a>', unsafe_allow_html=True)
+            b3.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:6px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         with c_note:
             st.caption("📝 Note cộng dồn:")
@@ -149,7 +151,6 @@ for index, row in df_display.iterrows():
             st.write("")
             with st.popover("⋮"):
                 st.write("✏️ FULL EDIT")
-                # CHO PHÉP SỬA TOÀN BỘ CỘT
                 e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("ID", value=row['ID'], key=f"ei_{index}")
                 e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
@@ -164,7 +165,7 @@ for index, row in df_display.iterrows():
                     st.cache_data.clear(); st.rerun()
         st.divider()
 
-# KHO VIDEO (GIỮ NGUYÊN)
+# KHO VIDEO
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
