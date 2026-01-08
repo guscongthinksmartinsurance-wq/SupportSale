@@ -61,7 +61,7 @@ def load_data():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN PIPELINE ---
+# --- 3. GIAO DIỆN CHÍNH ---
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
@@ -86,24 +86,35 @@ with st.sidebar:
             st.rerun()
 
 df = load_data()
-if st.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
 
-# --- 4. RENDER LIST (GIAO DIỆN THẺ ỔN ĐỊNH) ---
-for index, row in df.iterrows():
+# --- KHÔI PHỤC SLIDER LỌC NGÀY ---
+c_filter, c_refresh = st.columns([3, 1])
+with c_filter:
+    days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
+with c_refresh:
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
+
+# Logic lọc theo ngày
+df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
+mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
+df_display = df[mask]
+
+# --- 4. RENDER PIPELINE DẠNG THẺ (CẤU TRÚC ỔN ĐỊNH) ---
+st.subheader(f"📋 Working List ({len(df_display)} leads)")
+
+for index, row in df_display.iterrows():
     sheet_row = index + 2
     with st.container():
-        c_info, c_comm, c_note, c_action = st.columns([2.5, 3.5, 3.2, 0.8])
+        c_info, c_comm, c_note, c_action = st.columns([2.2, 3.8, 3.2, 0.8])
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            # --- FIX CRM DỨT ĐIỂM ---
+            # FIX LINK CRM CHỐT HẠ: Dùng mã bảo mật noreferrer
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
-            
-            # Sử dụng referrer-policy để tránh bị CRM redirect về home khi mở từ app khác
-            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer noopener" style="color:#007bff;font-weight:bold;text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
@@ -112,7 +123,7 @@ for index, row in df.iterrows():
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
             
             st.write(f"📱 {p}")
-            # KHÔI PHỤC 4 NÚT: GỌI | SMS | MAIL | HẸN (Calendar)
+            # KHÔI PHỤC ĐẦY ĐỦ 4 NÚT: GỌI | SMS | MAIL | HẸN
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -120,8 +131,8 @@ for index, row in df.iterrows():
             b4.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         with c_note:
-            st.caption("📝 History:")
-            st.text_area("Lịch sử", value=row.get('Note',''), height=70, disabled=True, key=f"h_{index}")
+            st.caption("📝 Note cộng dồn:")
+            st.text_area("History", value=row.get('Note',''), height=70, disabled=True, key=f"h_{index}")
             new_n = st.text_input("Note mới...", key=f"in_{index}")
             if st.button("XONG ✅", key=f"done_{index}", use_container_width=True):
                 client = get_gs_client()
@@ -136,26 +147,24 @@ for index, row in df.iterrows():
 
         with c_action:
             st.write("")
-            # KHÔI PHỤC NÚT EDIT
+            # KHÔI PHỤC NÚT EDIT TRONG MENU 3 CHẤM
             with st.popover("⋮"):
                 st.write("✏️ Edit Lead Info")
                 e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
                 e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
-                e_email = st.text_input("Email", value=row.get('Email',''), key=f"ee_{index}")
                 e_state = st.text_input("State", value=row.get('State',''), key=f"es_{index}")
                 if st.button("Save Changes", key=f"sv_{index}"):
                     client = get_gs_client()
                     ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                     ws_e.update_cell(sheet_row, 1, e_name)
                     ws_e.update_cell(sheet_row, 3, e_cell)
-                    ws_e.update_cell(sheet_row, 5, e_email)
                     ws_e.update_cell(sheet_row, 6, e_state)
                     st.success("Updated!")
                     st.cache_data.clear()
                     st.rerun()
         st.divider()
 
-# --- 5. KHÔI PHỤC VIDEO YOUTUBE ---
+# --- 5. KHÔI PHỤC KHO VIDEO YOUTUBE ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
