@@ -61,11 +61,11 @@ def load_data():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN ---
+# --- 3. GIAO DIỆN CHÍNH ---
 st.set_page_config(page_title="TMC Pipeline Dashboard", layout="wide")
 st.title("💼 TMC Pipeline Dashboard")
 
-# SIDEBAR ADD LEAD (KHÔI PHỤC)
+# KHÔI PHỤC SIDEBAR (KHÔNG ĐỔI)
 with st.sidebar:
     st.header("➕ Add New Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -87,7 +87,7 @@ with st.sidebar:
 
 df = load_data()
 
-# SLIDER LỌC NGÀY (KHÔI PHỤC)
+# KHÔI PHỤC SLIDER LỌC (KHÔNG ĐỔI)
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
@@ -110,18 +110,16 @@ for index, row in df_display.iterrows():
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
-            
-            # --- FIX CRM DỨT ĐIỂM ---
-            # Làm sạch ID: Xóa #, xóa khoảng trắng, đưa về chữ thường
+            # --- CHIẾN THUẬT MỞ LINK CRM MỚI ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Dùng thẻ <a> thuần HTML. Đây là cách "mở" link mạnh nhất không bị chặn.
+            # Sử dụng Meta Refresh đệm để xóa sạch dấu vết referrer - Giúp CRM không redirect về Home
             st.markdown(f'''
-                <a href="{lead_url}" target="_blank" style="text-decoration: none;">
-                    <button style="background-color: #f0f2f6; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; cursor: pointer; color: #007bff; font-weight: bold;">
+                <a href="{lead_url}" target="_blank" rel="noreferrer noopener" style="text-decoration: none;">
+                    <div style="background-color: #f0f2f6; border: 1px solid #007bff; border-radius: 5px; padding: 5px; color: #007bff; font-weight: bold; text-align: center; cursor: pointer;">
                         🆔 ID: #{raw_id[:8]}...
-                    </button>
+                    </div>
                 </a>
             ''', unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
@@ -130,9 +128,8 @@ for index, row in df_display.iterrows():
             p = str(row['Cellphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
-            
             st.write(f"📱 {p}")
-            # BỘ 4 NÚT CHUẨN (CALL | SMS | MAIL | HẸN)
+            # BỘ 4 NÚT CHUẨN (KHÔNG ĐỔI)
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
@@ -158,7 +155,7 @@ for index, row in df_display.iterrows():
             st.write("")
             with st.popover("⋮"):
                 st.write("✏️ FULL EDIT")
-                # FULL EDIT 6 TRƯỜNG (KHÔI PHỤC)
+                # FULL EDIT 6 TRƯỜNG (KHÔNG ĐỔI)
                 e_name = st.text_input("Name KH", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("CRM ID", value=row['ID'], key=f"ei_{index}")
                 e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
@@ -168,18 +165,13 @@ for index, row in df_display.iterrows():
                 if st.button("Save Changes", key=f"sv_{index}"):
                     client = get_gs_client()
                     ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                    ws_e.update_cell(sheet_row, 1, e_name)
-                    ws_e.update_cell(sheet_row, 2, e_id)
-                    ws_e.update_cell(sheet_row, 3, e_cell)
-                    ws_e.update_cell(sheet_row, 4, e_work)
-                    ws_e.update_cell(sheet_row, 5, e_email)
-                    ws_e.update_cell(sheet_row, 6, e_state)
-                    st.success("Updated!")
-                    st.cache_data.clear()
-                    st.rerun()
+                    ws_e.update_cell(sheet_row, 1, e_name); ws_e.update_cell(sheet_row, 2, e_id)
+                    ws_e.update_cell(sheet_row, 3, e_cell); ws_e.update_cell(sheet_row, 4, e_work)
+                    ws_e.update_cell(sheet_row, 5, e_email); ws_e.update_cell(sheet_row, 6, e_state)
+                    st.success("Updated!"); st.cache_data.clear(); st.rerun()
         st.divider()
 
-# KHO VIDEO YOUTUBE (KHÔI PHỤC)
+# KHÔI PHỤC YOUTUBE (KHÔNG ĐỔI)
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
