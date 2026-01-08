@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CHÌA KHÓA XÁC THỰC (ĐÃ LÀM SẠCH ĐỂ FIX BINASCII ERROR) ---
+# --- 1. CẤU HÌNH (GIỮ NGUYÊN) ---
 PK_RAW = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -43,10 +43,9 @@ info = {
     "token_uri": "https://oauth2.googleapis.com/token",
 }
 
-# LINK SHEET CỦA ANH
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CƠ CHẾ CACHE (DỨT ĐIỂM LỖI QUOTA) ---
+# --- 2. CƠ CHẾ CACHE (GIỮ NGUYÊN) ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
@@ -62,11 +61,10 @@ def load_data_from_google():
     df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN CHUẨN ---
+# --- 3. GIAO DIỆN (GIỮ NGUYÊN) ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Sidebar: Thêm khách 6 cột
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng Mới")
     n_name = st.text_input("Name KH")
@@ -92,7 +90,6 @@ with c_refresh:
         st.cache_data.clear()
         st.rerun()
 
-# Lazy Loading: Lọc trên RAM máy tính
 df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
@@ -110,9 +107,16 @@ for index, row in df_display.iterrows():
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # NÚT BẤM (Fix chốt RingCentral)
-        col_call.markdown(f'<a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
-        col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
+        # --- CHỈ SỬA ĐÚNG PHẦN NÀY ĐỂ BẬT APP RINGCENTRAL ---
+        # Sử dụng window.location.assign để ép trình duyệt gọi app mà không nhảy tab
+        
+        call_html = f'<div onclick="window.location.assign(\'rcapp://call?number={p}\')" style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">📞 GỌI</div>'
+        col_call.markdown(call_html, unsafe_allow_html=True)
+
+        sms_html = f'<div onclick="window.location.assign(\'rcapp://sms?number={p}&body={m_enc}\')" style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;cursor:pointer;">💬 SMS</div>'
+        col_sms.markdown(sms_html, unsafe_allow_html=True)
+
+        # GIỮ NGUYÊN MAIL VÀ HẸN (VÌ ĐÃ OK)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
         col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
