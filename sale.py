@@ -151,4 +151,4 @@ for index, row in df.iterrows():
 st.markdown("---")
 v1, v2 = st.columns(2)
 v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
-v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")s
+v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
