@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 import urllib.parse
 from datetime import datetime
 
-# --- 1. CẤU HÌNH KẾT NỐI (GIỮ NGUYÊN) ---
+# --- 1. CẤU HÌNH XÁC THỰC (ĐÃ FIX ĐỦ TOKEN_URI) ---
 private_key = """-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+8HRC1BZcrafY
 yI+MlMqX3tJ0Rt5FuDdJlew0kZggLJpr0z1OshwSOJ8++8lgyPkvkZumb3CLZkB1
@@ -18,6 +18,10 @@ sPKM49GjAgMBAAECggEAG4KklZ5eLHM+zD61ZBFqETCjDOrLCquMl7cYpchWbUhP
 Aq4FKVogXxj7Htm8qytQs9vkjX9hBLIEIvrpkRdug5BXgPUudDkHz9yGUNzzvcaK
 OpGr3fVwLwal/FYx0XLy5Hpdl5zkVsiuK4Q7IBvketKZg3Sy9xYnhPqOdkvIoIr6
 cVXVE+hCVYt6+FtLmuOBQO5EfTiXY+S/CP/qUsNYz0J6pPsTxQAdRYHwoVFP117t
+hlQ/dnWT1hg8wDWXZR/EwLI8H4mP2vPNqmG9f0CZiQKBgQD0NGkEqISRa1ac32Lt
+2U1HSkjoGa0d2ZATdfMWJyz/IUFiDEhgY02eauPm2QJCcMXg3qJieRnsNKh5fy7I
+2PHSXzW+AQCUcx0g/HIEyLccCRoTZJcrVuvZ5UAxpepAeQDmCHyNfp1I7SjnBd0J
+PbLBOLJFHziXF/x/uY0DRVI9CwKBgQDIKWq9ZSutX7euZH5TVC27r5EfTiXY+S/CP/qUsNYz0J6pPsTxQAdRYHwoVFP117t
 hlQ/dnWT1hg8wDWXZR/EwLI8H4mP2vPNqmG9f0CZiQKBgQD0NGkEqISRa1ac32Lt
 2U1HSkjoGa0d2ZATdfMWJyz/IUFiDEhgY02eauPm2QJCcMXg3qJieRnsNKh5fy7I
 2PHSXzW+AQCUcx0g/HIEyLccCRoTZJcrVuvZ5UAxpepAeQDmCHyNfp1I7SjnBd0J
@@ -40,33 +44,33 @@ info = {
     "project_id": "caramel-hallway-481517-q8",
     "private_key": private_key.replace("\\n", "\n"),
     "client_email": "tmc-assistant@caramel-hallway-481517-q8.iam.gserviceaccount.com",
+    "token_uri": "https://oauth2.googleapis.com/token", # Dòng này cực kỳ quan trọng để fix lỗi MalformedError
 }
 
-# ĐÃ ĐIỀN LINK CỦA ANH VÀO ĐÂY:
+# LINK SHEET CỦA ANH
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. CƠ CHẾ CACHE ĐỂ DỨT ĐIỂM LỖI API ---
+# --- 2. CƠ CHẾ CACHE (CHỐNG LỖI QUOTA) ---
 @st.cache_resource
-def get_gsheet_conn():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_info(info, scopes=scopes)
+def get_gs_client():
+    creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
 @st.cache_data(ttl=600)
-def fetch_data_cached():
-    client = get_gsheet_conn()
+def load_data_from_google():
+    client = get_gs_client()
     sh = client.open_by_url(SPREADSHEET_URL)
     ws = sh.get_worksheet(0)
     data = ws.get_all_records()
     df = pd.DataFrame(data)
-    df.columns = [str(col).strip() for col in df.columns] # Xử lý lỗi tiêu đề
+    df.columns = [str(col).strip() for col in df.columns]
     return df
 
-# --- 3. GIAO DIỆN (GIỮ NGUYÊN CẤU TRÚC ANH DUYỆT) ---
+# --- 3. GIAO DIỆN CHUẨN ---
 st.set_page_config(page_title="TMC Sales Assistant", layout="wide")
 st.title("🚀 TMC Sales Assistant Tool")
 
-# Sidebar: Thêm khách đầy đủ 6 cột
+# Sidebar
 with st.sidebar:
     st.header("➕ Thêm Khách Hàng Mới")
     n_name = st.text_input("Name KH")
@@ -75,19 +79,16 @@ with st.sidebar:
     n_work = st.text_input("Workphone")
     n_status = st.selectbox("Status", ["New", "Potential", "Follow-up", "Hot"])
     n_sales = st.text_input("Sales Assigned")
-    
     if st.button("Lưu khách hàng"):
-        client = get_gsheet_conn()
+        client = get_gs_client()
         ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
         ws.append_row([n_name, n_id, n_cell, n_work, n_status, "", n_sales])
-        st.cache_data.clear() # Xóa cache để cập nhật dữ liệu mới
-        st.success("Đã thêm khách mới!")
+        st.cache_data.clear()
+        st.success("Đã thêm!")
         st.rerun()
 
-# Thanh trượt lọc & Refresh (Dữ liệu chạy trên RAM máy tính)
+df = load_data_from_google()
 c_filter, c_refresh = st.columns([3, 1])
-df = fetch_data_cached()
-
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_refresh:
@@ -95,43 +96,42 @@ with c_refresh:
         st.cache_data.clear()
         st.rerun()
 
-# Logic lọc trên RAM
+# Lọc trên RAM (Lazy Loading)
 df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
 df_display = df[mask]
 
 st.subheader(f"📋 Danh sách ({len(df_display)} khách)")
 
+# --- 4. HIỂN THỊ CHI TIẾT ---
 for index, row in df_display.iterrows():
     with st.container():
         col_info, col_call, col_sms, col_mail, col_cal, col_done = st.columns([2.5, 1, 1, 1, 1, 1])
-        
         with col_info:
-            tag = "🟢 NEW" if pd.isna(row['Last_Interact_DT']) else ""
-            st.markdown(f"**{row['Name KH']}** {tag}")
+            st.markdown(f"**{row['Name KH']}**")
             st.caption(f"ID: {row['ID']} | 📞 {row['Cellphone']} | {row['Status']}")
 
         p = str(row['Cellphone']).strip()
         n_enc = urllib.parse.quote(str(row['Name KH']))
         m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-        # NÚT BẬT APP (Dùng target="_self" để kích hoạt RingCentral)
+        # NÚT BẤM (Dùng target="_self" để bật RingCentral)
         col_call.markdown(f'<a href="rcapp://call?number={p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📞 GỌI</div></a>', unsafe_allow_html=True)
         col_sms.markdown(f'<a href="rcapp://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">💬 SMS</div></a>', unsafe_allow_html=True)
         col_mail.markdown(f'<a href="mailto:?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📧 MAIL</div></a>', unsafe_allow_html=True)
         col_cal.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=Hen_TMC_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:10px;border-radius:5px;text-align:center;font-weight:bold;">📅 HẸN</div></a>', unsafe_allow_html=True)
 
         if col_done.button("Xong", key=f"d_{index}"):
-            client = get_gsheet_conn()
-            ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-            ws.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            client = get_gs_client()
+            ws_u = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
+            ws_u.update_cell(index + 2, 6, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             st.cache_data.clear()
             st.rerun()
         st.divider()
 
-# --- 4. VIDEO (GIỮ NGUYÊN) ---
+# --- 5. VIDEO SALES KIT ---
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
-v_col1, v_col2 = st.columns(2)
-v_col1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
-v_col2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
+v1, v2 = st.columns(2)
+v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
+v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
