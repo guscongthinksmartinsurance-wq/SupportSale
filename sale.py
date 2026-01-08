@@ -1,10 +1,10 @@
 import streamlit as st
-import pd
+import pandas as pd
 import sqlite3
 from datetime import datetime
 import urllib.parse
 
-# --- 1. KHỞI TẠO DATABASE ---
+# --- 1. KHỞI TẠO DATABASE (CRM NỘI BỘ) ---
 DB_NAME = "tmc_crm_v10.db"
 
 def init_db():
@@ -23,8 +23,24 @@ conn = init_db()
 # --- 2. GIAO DIỆN ---
 st.set_page_config(page_title="TMC CRM Pro", layout="wide")
 
+# Hàm lưu note kiểu CRM chuyên nghiệp
+def save_note_crm(lid, note_key, current_h):
+    new_msg = st.session_state[note_key]
+    if new_msg:
+        now = datetime.now()
+        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{current_h}"
+        # 1. Ghi vào Database
+        cursor = conn.cursor()
+        cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
+                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
+        conn.commit()
+        # 2. Xóa nội dung ô nhập để sẵn sàng cho note tiếp theo
+        st.session_state[note_key] = ""
+        # 3. ÉP LÀM MỚI GIAO DIỆN NGAY LẬP TỨC
+        st.rerun()
+
 with st.sidebar:
-    st.title("🛠️ Local Control")
+    st.title("🛠️ CRM Database")
     with st.expander("🔗 Add Link / Video"):
         with st.form("add_l"):
             c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
@@ -33,16 +49,14 @@ with st.sidebar:
 
     df_links = pd.read_sql('SELECT * FROM links', conn)
     with st.expander("🚀 Quick Links", expanded=True):
-        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
-            st.markdown(f"**[{l['title']}]({l['url']})**")
+        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
     with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
-            st.caption(v['title']); st.video(v['URL'])
+        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows(): st.caption(v['title']); st.video(v['URL'])
     
     st.divider()
     with st.expander("➕ Add New Lead", expanded=True):
         with st.form("new_lead"):
-            n = st.text_input("Name KH"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
+            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
             if st.form_submit_button("Save"):
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note) VALUES (?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", ""))
                 conn.commit(); st.rerun()
@@ -54,10 +68,17 @@ st.title("💼 Pipeline Processing")
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
+# Lọc ngày
+leads_df['last_interact_dt'] = pd.to_datetime(leads_df['last_interact'], errors='coerce')
+if days > 0:
+    mask = (leads_df['last_interact_dt'].isna()) | ((datetime.now() - leads_df['last_interact_dt']).dt.days >= days)
+    leads_df = leads_df[mask]
+
 # Render Lead
 for _, row in leads_df.iterrows():
     lid = row['id']
     curr_h = row['note'] if row['note'] else ""
+    input_key = f"in_{lid}"
 
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
@@ -72,18 +93,8 @@ for _, row in leads_df.iterrows():
         
         with c2:
             st.text_area("History", value=curr_h, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            
-            # CÔNG THỨC CRM: Mỗi ô Note là một Form ngầm để xử lý Enter cực nhanh
-            with st.form(key=f"f_{lid}", clear_on_submit=True):
-                new_msg = st.text_input("Ghi chú mới & Enter", label_visibility="collapsed", placeholder="Nhập note...")
-                if st.form_submit_button("Lưu Note", help="Nhấn Enter hoặc bấm nút để lưu"):
-                    if new_msg:
-                        now = datetime.now()
-                        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{curr_h}"
-                        conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
-                                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
-                        conn.commit()
-                        st.rerun() # Tự động làm mới trang ngay lập tức
+            # CƠ CHẾ CRM: Nhấn Enter để gọi hàm save_note_crm và tự động rerun
+            st.text_input("Ghi chú mới & Enter", key=input_key, on_change=save_note_crm, args=(lid, input_key, curr_h), label_visibility="collapsed", placeholder="Nhập note...")
 
         with c3:
             with st.popover("⋮"):
