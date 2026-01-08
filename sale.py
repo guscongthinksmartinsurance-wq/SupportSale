@@ -5,7 +5,7 @@ from datetime import datetime
 import urllib.parse
 
 # --- 1. KHỞI TẠO DATABASE ---
-DB_NAME = "tmc_crm_v12.db"
+DB_NAME = "tmc_crm_v13.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -24,7 +24,7 @@ conn = init_db()
 st.set_page_config(page_title="TMC CRM Pro", layout="wide")
 
 with st.sidebar:
-    st.title("🛠️ Local CRM Control")
+    st.title("🛠️ Local CRM")
     # Quản lý Links
     with st.expander("🔗 Add Link / Video"):
         with st.form("add_l", clear_on_submit=True):
@@ -52,7 +52,7 @@ st.title("💼 Pipeline Processing")
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
-# Render Lead
+# Render Pipeline
 for _, row in leads_df.iterrows():
     lid = row['id']
     curr_h = row['note'] if row['note'] else ""
@@ -62,11 +62,9 @@ for _, row in leads_df.iterrows():
         c1, c2, c3 = st.columns([4, 5, 1])
         with c1:
             st.markdown(f"#### {row['name']}")
-            # ID copy
             rid = str(row['crm_id']).strip().replace('#', '').lower()
             st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied!')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {rid}</span></div>""", unsafe_allow_html=True)
             
-            # Liên lạc
             p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); em = str(row['email']).strip()
             n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             
@@ -84,18 +82,19 @@ for _, row in leads_df.iterrows():
         with c2:
             st.text_area("History", value=curr_h, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
             
-            # XỬ LÝ NHẬP NOTE TỨC THÌ
+            # XỬ LÝ NHẬP NOTE: Dùng biến trung gian để bắt Enter mà không lỗi Rerun
             new_note = st.text_input("Ghi chú mới & Enter", key=input_key, label_visibility="collapsed", placeholder="Nhập note...")
             
-            if new_note: # Nếu anh vừa nhấn Enter
+            if new_note: # Khi anh vừa nhấn Enter
                 now = datetime.now()
                 combined = f"[{now.strftime('%m/%d')}]: {new_note}\n{curr_h}"
-                # Ghi DB nội bộ
+                # 1. Ghi Database nội bộ (Cực nhanh)
                 conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
                              (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
                 conn.commit()
-                # Xóa bộ nhớ đệm ô nhập để không lặp và làm mới trang
-                st.session_state[input_key] = ""
+                # 2. Xóa bộ nhớ đệm của ô nhập đúng cách để tránh lỗi StreamlitAPIException
+                st.session_state[input_key] = "" 
+                # 3. ÉP LÀM MỚI TRANG NGAY LẬP TỨC
                 st.rerun()
 
         with c3:
