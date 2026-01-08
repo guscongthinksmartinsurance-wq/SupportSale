@@ -100,46 +100,39 @@ st.subheader(f"📋 Working List ({len(df_display)} leads)")
 for index, row in df_display.iterrows():
     sheet_row = index + 2
     with st.container():
-        c_left, c_note, c_action = st.columns([4.5, 4.5, 1])
+        c_left, c_note, c_action = st.columns([4.0, 5.0, 1.0])
         
         with c_left:
             st.markdown(f"#### {row['Name KH']}")
             
-            # --- XỬ LÝ LINK & ICON ---
+            # --- DÒNG ID & COPY (THẲNG HÀNG SÁT NHAU) ---
             raw_id = str(row['ID']).strip().replace('#', '').lower()
             lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
+            
+            c_id_txt, c_id_cp = st.columns([1, 2.5])
+            c_id_txt.markdown(f'🆔 [**Link CRM**]({lead_url})')
+            # Thẻ copy 1 chạm: Nhấn vào mã là tự copy
+            c_id_cp.code(raw_id, language=None)
+            
+            # --- DÒNG LIÊN LẠC (ICON SÁT PHONE) ---
             p_cell = str(row['Cellphone']).strip()
-            p_work = str(row['Workphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-            # DÒNG ID & COPY (THẲNG HÀNG TUYỆT ĐỐI)
-            # Dùng 2 cột nhỏ sát nhau để nút copy không bị nhảy dòng
-            cid_txt, cid_btn = st.columns([0.7, 1.3])
-            cid_txt.markdown(f'🆔 <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff; font-weight:bold; text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
-            if cid_btn.button("📋", key=f"cp_{index}", help=f"Copy ID: {raw_id}"):
-                st.code(raw_id, language="text") # Hiện mã ID ngay dưới để anh copy
-                st.toast(f"Đã lấy mã ID của {row['Name KH']}")
-            
-            # DÒNG LIÊN LẠC (ICON SÁT PHONE)
             comm_html = f"""
-            <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px; margin-bottom: 5px;">
-                <span style="font-size: 16px;">📱 Cell: <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
+            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 5px;">
+                <span style="font-size: 15px;">📱 <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
                 <a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">💬</a>
                 <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">📧</a>
                 <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" style="text-decoration:none; font-size:18px;">📅</a>
             </div>
             """
             st.markdown(comm_html, unsafe_allow_html=True)
-            
-            if p_work and p_work != '0':
-                st.markdown(f'📞 Work: <a href="tel:{p_work}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_work}</a>', unsafe_allow_html=True)
-            
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_note:
             st.caption("📝 Ghi chú & Xử lý:")
-            st.text_area("History", row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
+            st.text_area("History", value=row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
             c_in, c_btn = st.columns([3, 1])
             new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{index}"):
@@ -158,13 +151,10 @@ for index, row in df_display.iterrows():
                 st.write("✏️ EDIT")
                 e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
                 e_id = st.text_input("ID", value=row['ID'], key=f"ei_{index}")
-                e_cell = st.text_input("Cell", value=row['Cellphone'], key=f"ec_{index}")
-                e_state = st.text_input("State", value=row.get('State',''), key=f"es_{index}")
                 if st.button("Save", key=f"sv_{index}"):
                     client = get_gs_client()
                     ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
                     ws_e.update_cell(sheet_row, 1, e_name); ws_e.update_cell(sheet_row, 2, e_id)
-                    ws_e.update_cell(sheet_row, 3, e_cell); ws_e.update_cell(sheet_row, 6, e_state)
                     st.cache_data.clear(); st.rerun()
         st.divider()
 
