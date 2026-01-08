@@ -5,7 +5,7 @@ from datetime import datetime
 import urllib.parse
 
 # --- 1. KHỞI TẠO DATABASE ---
-DB_NAME = "tmc_crm_final.db"
+DB_NAME = "tmc_crm_v15.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -20,84 +20,86 @@ def init_db():
 
 conn = init_db()
 
-# --- 2. HÀM XỬ LÝ LƯU NOTE (SẠCH, KHÔNG LỖI ĐỎ) ---
-def save_note_v14(lid, key, current_h):
-    new_txt = st.session_state[key]
-    if new_txt:
+# --- 2. HÀM XỬ LÝ LƯU NOTE "NHÁY MẮT" ---
+def handle_note_instant(lid, input_key, current_note_content):
+    new_text = st.session_state[input_key]
+    if new_text:
         now = datetime.now()
-        combined = f"[{now.strftime('%m/%d')}]: {new_txt}\n{current_h}"
-        # Ghi DB
+        timestamp = now.strftime('%m/%d %H:%M')
+        combined = f"[{timestamp}]: {new_text}\n{current_note_content}"
+        
+        # Bước A: Ghi Database ngầm
         cursor = conn.cursor()
         cursor.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
                      (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
         conn.commit()
-        # Không reset key ở đây để tránh lỗi StreamlitAPIException
-        st.session_state["just_saved"] = True
+        
+        # Bước B: ÉP HIỂN THỊ LÊN MÀN HÌNH (Lưu vào RAM)
+        st.session_state[f"display_note_{lid}"] = combined
+        
+        # Bước C: Xóa sạch ô nhập
+        st.session_state[input_key] = ""
 
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Master CRM", layout="wide")
 
-# Kiểm tra nếu vừa lưu xong thì rerun để dọn dẹp ô nhập và hiện History
-if st.session_state.get("just_saved"):
-    st.session_state["just_saved"] = False
-    st.rerun()
-
 with st.sidebar:
-    st.title("🛠️ Local CRM")
-    # Links
+    st.title("🛠️ CRM Control")
+    with st.expander("➕ Add New Lead", expanded=True):
+        with st.form("new_l", clear_on_submit=True):
+            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work")
+            if st.form_submit_button("Save"):
+                conn.execute('INSERT INTO leads (name, crm_id, cell, work, status, last_interact, note) VALUES (?,?,?,?,?,?,?)', (n, i, p, w, "New", "", ""))
+                conn.commit(); st.rerun()
+    
+    st.divider()
     df_links = pd.read_sql('SELECT * FROM links', conn)
     with st.expander("🚀 Quick Links", expanded=True):
-        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
-            st.markdown(f"**[{l['title']}]({l['url']})**")
-    with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
-            st.caption(v['title']); st.video(v['URL'])
-    st.divider()
-    # Add Lead
-    with st.expander("➕ Add New Lead", expanded=True):
-        with st.form("new_lead", clear_on_submit=True):
-            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
-            if st.form_submit_button("Lưu"):
-                conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note) VALUES (?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", ""))
-                conn.commit(); st.rerun()
+        for _, l in df_links.iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
-leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
-days = st.slider("Hiện khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
-# Render Lead
+# Đọc dữ liệu từ Database
+leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
+
 for _, row in leads_df.iterrows():
     lid = row['id']
-    curr_h = row['note'] if row['note'] else ""
     input_key = f"in_{lid}"
+    
+    # CHIẾN THUẬT: Ưu tiên lấy Note từ RAM (vừa gõ xong), nếu không có mới lấy từ Database
+    if f"display_note_{lid}" not in st.session_state:
+        st.session_state[f"display_note_{lid}"] = row['note'] if row['note'] else ""
+    
+    current_display_note = st.session_state[f"display_note_{lid}"]
 
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
         with c1:
             st.markdown(f"#### {row['name']}")
             rid = str(row['crm_id']).strip().replace('#', '').lower()
-            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied!')" style="color:#e83e8c;cursor:pointer;font-family:monospace;font-weight:bold;background:#f8f9fa;border:1px dashed #e83e8c;padding:2px 6px;border-radius:4px;">📋 {rid}</span></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span> <code style="color:#e83e8c;">{rid}</code></div>""", unsafe_allow_html=True)
             
-            p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); em = str(row['email']).strip()
+            p_c = str(row['cell']).strip()
             n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             
+            # Đầy đủ Icon: Call, SMS, Email, Calendar
             st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;">
                 <span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span>
                 <a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a>
-                <a href="mailto:{em}?body={m_e}">📧</a>
+                <a href="mailto:?body={m_e}">📧</a>
                 <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a>
             </div>""", unsafe_allow_html=True)
-            if p_w and p_w not in ['0', '']:
-                st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
+            if row['work']: st.markdown(f'📞 Work: <a href="tel:{row["work"]}" style="color:#28a745;font-weight:bold;text-decoration:none;">{row["work"]}</a>', unsafe_allow_html=True)
         
         with c2:
-            st.text_area("History", value=curr_h, height=120, disabled=True, key=f"h_{lid}", label_visibility="collapsed")
-            # ENTER LÀM MỚI TỨC THÌ
-            st.text_input("Ghi chú mới & Enter", key=input_key, on_change=save_note_v14, args=(lid, input_key, curr_h), label_visibility="collapsed", placeholder="Nhập note...")
+            # History lấy từ bộ nhớ RAM (Cực nhanh, hiện ngay lập tức)
+            st.text_area("History", value=current_display_note, height=120, disabled=True, key=f"view_{lid}", label_visibility="collapsed")
+            
+            # Ô nhập Note - Khi Enter sẽ gọi hàm handle_note_instant
+            st.text_input("Ghi chú mới & Enter", key=input_key, on_change=handle_note_instant, args=(lid, input_key, current_display_note), label_visibility="collapsed", placeholder="Nhập ghi chú...")
 
         with c3:
-            with st.popover("⋮"):
-                if st.button("Xóa Lead", key=f"del_{lid}"):
-                    conn.execute('DELETE FROM leads WHERE id=?', (lid,)); conn.commit(); st.rerun()
+            if st.button("🗑️", key=f"del_{lid}"):
+                conn.execute('DELETE FROM leads WHERE id=?', (lid,)); conn.commit(); st.rerun()
         st.divider()
