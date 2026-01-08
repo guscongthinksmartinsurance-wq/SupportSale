@@ -64,7 +64,6 @@ def load_data():
 # --- 3. GIAO DIỆN ---
 st.set_page_config(page_title="TMC Pipeline Pro", layout="wide")
 
-# Sidebar Add Lead (Giữ nguyên)
 with st.sidebar:
     st.header("➕ Add Lead")
     with st.form("add_form", clear_on_submit=True):
@@ -80,19 +79,16 @@ with st.sidebar:
             client = get_gs_client()
             ws = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
             ws.append_row([f_name, f_id, f_cell, f_work, f_email, f_state, f_status, "", f_note, ""])
-            st.cache_data.clear()
-            st.rerun()
+            st.cache_data.clear(); st.rerun()
 
 df = load_data()
 
-# Slider lọc & Refresh
 c_filter, c_refresh = st.columns([3, 1])
 with c_filter:
     days = st.slider("Chưa tương tác quá (ngày):", 1, 60, 1)
 with c_refresh:
     if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()
-        st.rerun()
+        st.cache_data.clear(); st.rerun()
 
 df['Last_Interact_DT'] = pd.to_datetime(df['Last_Interact'], errors='coerce')
 mask = (df['Last_Interact_DT'].isna()) | ((datetime.now() - df['Last_Interact_DT']).dt.days >= days)
@@ -104,7 +100,6 @@ st.subheader(f"📋 Working List ({len(df_display)} leads)")
 for index, row in df_display.iterrows():
     sheet_row = index + 2
     with st.container():
-        # Layout 3 cột chính: Info & Contact | Ghi chú | Action
         c_left, c_note, c_action = st.columns([4.5, 4.5, 1])
         
         with c_left:
@@ -118,21 +113,23 @@ for index, row in df_display.iterrows():
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
 
-            # Dòng 1: ID CRM
-            st.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff; font-weight:bold; text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            # Dòng 1: ID CRM + Icon Copy (Gia cố)
+            c_id1, c_id2 = st.columns([3, 1])
+            c_id1.markdown(f'🆔 ID: <a href="{lead_url}" target="_blank" rel="noreferrer" style="color:#007bff; font-weight:bold; text-decoration:none;">#{raw_id[:8]}...</a>', unsafe_allow_html=True)
+            if c_id2.button("📋", key=f"cp_{index}", help="Click để lấy mã ID dán vào CRM"):
+                st.info(f"Mã ID: {raw_id}")
             
             # Dòng 2: Cellphone + SMS Icon + Mail Icon + Calendar Icon
             comm_html = f"""
-            <div style="display: flex; align-items: center; gap: 12px; margin-top: 5px;">
+            <div style="display: flex; align-items: center; gap: 15px; margin-top: 5px; margin-bottom: 5px;">
                 <span style="font-size: 16px;">📱 Cell: <a href="tel:{p_cell}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_cell}</a></span>
-                <a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self" title="Gửi SMS">💬</a>
-                <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self" title="Gửi Mail">📧</a>
-                <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" title="Đặt hẹn">📅</a>
+                <a href="rcmobile://sms?number={p_cell}&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">💬</a>
+                <a href="mailto:{row.get('Email','')}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none; font-size:18px;">📧</a>
+                <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" style="text-decoration:none; font-size:18px;">📅</a>
             </div>
             """
             st.markdown(comm_html, unsafe_allow_html=True)
             
-            # Dòng 3: Workphone (Nếu có)
             if p_work and p_work != '0':
                 st.markdown(f'📞 Work: <a href="tel:{p_work}" style="color:#28a745; font-weight:bold; text-decoration:none;">{p_work}</a>', unsafe_allow_html=True)
             
@@ -141,8 +138,6 @@ for index, row in df_display.iterrows():
         with c_note:
             st.caption("📝 Ghi chú & Xử lý:")
             st.text_area("History", value=row.get('Note',''), height=65, disabled=True, key=f"h_{index}")
-            
-            # Ô nhập note và nút XONG trên cùng 1 hàng cho gọn
             c_in, c_btn = st.columns([3, 1])
             new_n = c_in.text_input("Note mới...", key=f"in_{index}", label_visibility="collapsed")
             if c_btn.button("XONG ✅", key=f"done_{index}"):
@@ -171,7 +166,6 @@ for index, row in df_display.iterrows():
                     st.cache_data.clear(); st.rerun()
         st.divider()
 
-# KHO VIDEO
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
