@@ -134,5 +134,6 @@ for index, row in df_display.iterrows():
 st.markdown("---")
 st.subheader("🎬 Kho Video Sales Kit")
 v1, v2 = st.columns(2)
-v1.video("https://www.youtube.com/watch?v=HHfsKefOwA4")
+v1.video("https://www.youtube.com/watch?v=PoUWP--0CDU")
 v2.video("https://www.youtube.com/watch?v=OJruIuIs_Ag")
+
