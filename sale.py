@@ -4,8 +4,8 @@ import sqlite3
 from datetime import datetime
 import urllib.parse
 
-# --- 1. KHỞI TẠO DATABASE ---
-DB_NAME = "tmc_crm_v15.db"
+# --- 1. KHỞI TẠO DATABASE (CRM LOCAL) ---
+DB_NAME = "tmc_crm_v16.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -23,19 +23,15 @@ conn = init_db()
 # --- 2. GIAO DIỆN ---
 st.set_page_config(page_title="TMC CRM Pro", layout="wide")
 
+# Sidebar
 with st.sidebar:
-    st.title("🛠️ Local CRM Control")
+    st.title("🛠️ Local CRM")
     with st.expander("➕ Add New Lead", expanded=True):
-        with st.form("new_lead_form", clear_on_submit=True):
-            n = st.text_input("Name KH"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work")
-            if st.form_submit_button("Lưu Lead"):
+        with st.form("new_l", clear_on_submit=True):
+            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work")
+            if st.form_submit_button("Save"):
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, status, last_interact, note) VALUES (?,?,?,?,?,?,?)', (n, i, p, w, "New", "", ""))
                 conn.commit(); st.rerun()
-    
-    st.divider()
-    df_links = pd.read_sql('SELECT * FROM links', conn)
-    with st.expander("🚀 Quick Links", expanded=True):
-        for _, l in df_links.iterrows(): st.markdown(f"**[{l['title']}]({l['url']})**")
 
 # --- MAIN VIEW ---
 st.title("💼 Pipeline Processing")
@@ -46,6 +42,7 @@ leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 for _, row in leads_df.iterrows():
     lid = row['id']
     curr_h = row['note'] if row['note'] else ""
+    input_key = f"in_{lid}"
 
     with st.container():
         c1, c2, c3 = st.columns([4, 5, 1])
@@ -56,29 +53,31 @@ for _, row in leads_df.iterrows():
             
             p_c = str(row['cell']).strip(); n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             
-            # FULL ICONS: Call, SMS, Email, Calendar
+            # Đầy đủ Icon CRM
             st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;">
                 <span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span>
                 <a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a>
                 <a href="mailto:?body={m_e}">📧</a>
                 <a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a>
             </div>""", unsafe_allow_html=True)
-            if row['work']: st.markdown(f'📞 Work: <a href="tel:{row["work"]}" style="color:#28a745;font-weight:bold;text-decoration:none;">{row["work"]}</a>', unsafe_allow_html=True)
         
         with c2:
             st.text_area("History", value=curr_h, height=120, disabled=True, key=f"view_{lid}", label_visibility="collapsed")
             
-            # GIẢI PHÁP CRM: Dùng mini-form để Enter là Rerun ngay lập tức
-            with st.form(key=f"note_form_{lid}", clear_on_submit=True):
-                new_msg = st.text_input("Ghi chú mới", label_visibility="collapsed", placeholder="Nhập ghi chú & Enter...")
-                if st.form_submit_button("Lưu Note", help="Nhấn Enter để lưu nhanh"):
-                    if new_msg:
-                        now = datetime.now()
-                        combined = f"[{now.strftime('%m/%d')}]: {new_msg}\n{curr_h}"
-                        conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
-                                     (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
-                        conn.commit()
-                        st.rerun() # Form Submit Button ép App phải tải lại dữ liệu mới nhất
+            # XỬ LÝ NHẬP NOTE - DÙNG LOGIC KIỂM TRA TRỰC TIẾP
+            new_note = st.text_input("Ghi chú mới & Enter", key=input_key, label_visibility="collapsed", placeholder="Nhập note...")
+            
+            if new_note: # Khi anh vừa nhấn Enter xong
+                now = datetime.now()
+                combined = f"[{now.strftime('%m/%d')}]: {new_note}\n{curr_h}"
+                # 1. Ghi Database
+                conn.execute('UPDATE leads SET last_interact = ?, note = ? WHERE id = ?', 
+                             (now.strftime("%Y-%m-%d %H:%M:%S"), combined, lid))
+                conn.commit()
+                # 2. Xóa ô nhập trong RAM
+                st.session_state[input_key] = ""
+                # 3. ÉP LÀM MỚI TRANG NGAY LẬP TỨC
+                st.rerun()
 
         with c3:
             if st.button("🗑️", key=f"del_{lid}"):
