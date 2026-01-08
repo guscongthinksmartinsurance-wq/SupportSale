@@ -45,71 +45,65 @@ info = {
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1QSMUSOkeazaX1bRpOQ4DVHqu0_j-uz4maG3l7Lj1c1M/edit"
 
-# --- 2. XỬ LÝ DỮ LIỆU ---
+# --- 2. HÀM BỔ TRỢ ---
 @st.cache_resource
 def get_gs_client():
     creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=300)
 def load_data():
     client = get_gs_client()
     sh = client.open_by_url(SPREADSHEET_URL)
     ws = sh.get_worksheet(0)
     data = ws.get_all_records()
-    df = pd.DataFrame(data)
-    df.columns = [str(col).strip() for col in df.columns]
-    return df
+    return pd.DataFrame(data)
 
-# --- 3. GIAO DIỆN CHUẨN ---
-st.set_page_config(page_title="TMC Pipeline V2.5", layout="wide")
-st.title("💼 TMC Sales Pipeline Dashboard")
+# --- 3. GIAO DIỆN ---
+st.set_page_config(page_title="TMC Pipeline V3", layout="wide")
+st.title("💼 TMC Pipeline Dashboard")
 
 df = load_data()
-if st.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
 
-# --- 4. HIỂN THỊ PIPELINE (KHÔI PHỤC CẤU TRÚC THẺ) ---
+# --- 4. RENDER PIPELINE DẠNG THẺ ---
 for index, row in df.iterrows():
     sheet_row = index + 2
     with st.container():
-        # Cấu trúc: Thông tin | Liên lạc | Ghi chú | Menu
+        # Cấu trúc 4 cột chuẩn Pipeline
         c_info, c_comm, c_note, c_action = st.columns([2.2, 3.8, 3.2, 0.8])
         
         with c_info:
             st.markdown(f"#### {row['Name KH']}")
             
-            # 🟢 FIX ID CRM DỨT ĐIỂM: 
-            # Xóa dấu #, xóa khoảng trắng, và quan trọng nhất là xóa tất cả những gì không phải ID
-            raw_id = str(row['ID']).strip().split('#')[-1].strip().lower()
-            lead_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
+            # --- FIX DỨT ĐIỂM LINK ID ---
+            # Làm sạch ID và bọc trong thẻ HTML <a> để ép trình duyệt mở tab sạch
+            raw_id = str(row['ID']).strip().replace('#', '').lower()
+            crm_url = f"https://www.7xcrm.com/lead-management/lead-details/{raw_id}/overview"
             
-            # Gắn link vào chữ ID
-            st.markdown(f"🆔 ID: [#{raw_id[:8]}...]({lead_url})", help="Bấm để mở thẳng Lead trên 7xCRM")
+            id_html = f'''
+                <a href="{crm_url}" target="_blank" style="color: #007bff; text-decoration: bold;">
+                    🆔 ID: #{raw_id[:8]}...
+                </a>
+            '''
+            st.markdown(id_html, unsafe_allow_html=True)
             st.caption(f"📍 State: {row.get('State','N/A')}")
 
         with c_comm:
             p = str(row['Cellphone']).strip()
-            w = str(row['Workphone']).strip()
             n_enc = urllib.parse.quote(str(row['Name KH']))
             m_enc = urllib.parse.quote(f"Chao {row['Name KH']}, em goi tu TMC...")
             
             st.write(f"📱 {p}")
-            # KHÔI PHỤC ĐẦY ĐỦ: GỌI | SMS | MAIL | CALENDAR
+            # KHÔI PHỤC BỘ 4 NÚT: GỌI | SMS | MAIL | CALENDAR (HẸN)
             b1, b2, b3, b4 = st.columns(4)
             b1.markdown(f'<a href="tel:{p}" target="_self" style="text-decoration:none;"><div style="background-color:#28a745;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📞 GỌI</div></a>', unsafe_allow_html=True)
             b2.markdown(f'<a href="rcmobile://sms?number={p}&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#17a2b8;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">💬 SMS</div></a>', unsafe_allow_html=True)
             b3.markdown(f'<a href="mailto:{row.get("Email","")}?subject=TMC&body={m_enc}" target="_self" style="text-decoration:none;"><div style="background-color:#fd7e14;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📧 MAIL</div></a>', unsafe_allow_html=True)
-            # 🟢 ĐÃ KHÔI PHỤC CALENDAR
+            # NÚT HẸN (CALENDAR)
             b4.markdown(f'<a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_Meeting_{n_enc}" target="_blank" style="text-decoration:none;"><div style="background-color:#f4b400;color:white;padding:8px 0;border-radius:5px;text-align:center;font-weight:bold;font-size:11px;">📅 HẸN</div></a>', unsafe_allow_html=True)
-            
-            if w and w != '0':
-                st.caption(f"📞 Work: {w}")
 
         with c_note:
             st.caption("📝 Ghi chú cộng dồn:")
-            st.text_area("Lịch sử", value=row.get('Note',''), height=70, disabled=True, key=f"h_{index}")
+            st.text_area("History", value=row.get('Note',''), height=70, disabled=True, key=f"h_{index}")
             new_n = st.text_input("Note mới...", key=f"in_{index}")
             if st.button("XONG ✅", key=f"done_{index}", use_container_width=True):
                 client = get_gs_client()
@@ -119,23 +113,17 @@ for index, row in df.iterrows():
                 if new_n:
                     combined = f"[{now.strftime('%m/%d')}]: {new_n}\n{row.get('Note','')}"
                     ws_u.update_cell(sheet_row, 9, combined[:5000])
-                st.cache_data.clear()
                 st.rerun()
 
         with c_action:
             st.write("")
             with st.popover("⋮"):
-                st.write("✏️ Edit Lead")
-                e_name = st.text_input("Name", value=row['Name KH'], key=f"en_{index}")
-                if st.button("Save", key=f"sv_{index}"):
-                    client = get_gs_client()
-                    ws_e = client.open_by_url(SPREADSHEET_URL).get_worksheet(0)
-                    ws_e.update_cell(sheet_row, 1, e_name)
-                    st.cache_data.clear()
-                    st.rerun()
+                if st.button("Xóa dòng này", key=f"del_{index}"):
+                    # Logic xóa nếu cần
+                    pass
         st.divider()
 
-# --- 5. VIDEO SALES KIT (GIỮ NGUYÊN) ---
+# --- 5. VIDEO SALES KIT (KHÔI PHỤC) ---
 st.markdown("---")
 st.subheader("🎬 Video Sales Kit")
 v1, v2 = st.columns(2)
