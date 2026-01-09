@@ -4,13 +4,12 @@ import sqlite3
 from datetime import datetime
 import urllib.parse
 
-# --- 1. KẾT NỐI DATABASE (V24) ---
+# --- 1. KẾT NỐI DATABASE ---
 DB_NAME = "tmc_crm_v24.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
-    # Lead database với đầy đủ các trường quan trọng
     cursor.execute('''CREATE TABLE IF NOT EXISTS leads 
         (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, crm_id TEXT, cell TEXT, 
          work TEXT, email TEXT, state TEXT, status TEXT, last_interact TEXT, note TEXT, crm_link TEXT)''')
@@ -22,9 +21,8 @@ def init_db():
 conn = init_db()
 
 # --- 2. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="TMC CRM PRO V24", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V24.2", layout="wide")
 
-# CSS cho History Timeline và giao diện sạch
 st.markdown("""
     <style>
     .history-container {
@@ -43,7 +41,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC XỬ LÝ NOTE ---
+# --- 3. LOGIC XỬ LÝ ---
+if st.session_state.get("needs_refresh"):
+    st.session_state["needs_refresh"] = False
+    st.rerun()
+
 def save_note_v24(lid, current_note, note_key):
     new_txt = st.session_state[note_key]
     if new_txt and new_txt.strip():
@@ -56,14 +58,10 @@ def save_note_v24(lid, current_note, note_key):
         st.session_state[note_key] = ""
         st.session_state["needs_refresh"] = True
 
-if st.session_state.get("needs_refresh"):
-    st.session_state["needs_refresh"] = False
-    st.rerun()
-
-# --- 4. SIDEBAR (FULL TÍNH NĂNG) ---
+# --- 4. SIDEBAR (BẢO MẬT NÚT XÓA) ---
 with st.sidebar:
     st.title("🛠️ CRM Tools")
-    # Link & Sales Kit
+    
     with st.expander("🔗 Add Link / Sales Kit"):
         with st.form("add_l", clear_on_submit=True):
             c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
@@ -72,19 +70,30 @@ with st.sidebar:
                 conn.commit(); st.rerun()
 
     df_links = pd.read_sql('SELECT * FROM links', conn)
+    
     with st.expander("🚀 Quick Links", expanded=True):
         for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
-            st.markdown(f"**[{l['title']}]({l['url']})**")
+            c1, c2 = st.columns([8, 2])
+            c1.markdown(f"**[{l['title']}]({l['url']})**")
+            # Xóa Link cần xác nhận qua Popover
+            with c2.popover("🗑️", help="Xóa link"):
+                st.warning("Xóa link này?")
+                if st.button("Confirm", key=f"dl_{l['id']}"):
+                    conn.execute('DELETE FROM links WHERE id=?', (l['id'],)); conn.commit(); st.rerun()
+
     with st.expander("📚 Sales Kit", expanded=True):
         for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
             st.caption(v['title']); st.video(v['url'])
+            with st.popover("Xóa Video 🗑️"):
+                st.warning("Xóa video này?")
+                if st.button("Confirm", key=f"dv_{v['id']}"):
+                    conn.execute('DELETE FROM links WHERE id=?', (v['id'],)); conn.commit(); st.rerun()
+            st.divider()
     
     st.divider()
-    # Add Lead Full
-    with st.expander("➕ Add New Lead", expanded=True):
+    with st.expander("➕ Add New Lead"):
         with st.form("new_lead", clear_on_submit=True):
-            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State")
-            cl = st.text_input("Link CRM (7xCRM URL)")
+            n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State"); cl = st.text_input("Link CRM")
             if st.form_submit_button("Lưu Lead"):
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note, crm_link) VALUES (?,?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", "", cl))
                 conn.commit(); st.rerun()
@@ -94,27 +103,17 @@ st.title("💼 Pipeline Processing")
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 
 for _, row in leads_df.iterrows():
-    lid = row['id']; curr_h = row['note'] if row['note'] else ""
-    crm_url = row['crm_link'] if row['crm_link'] else "#"
+    lid = row['id']; curr_h = row['note'] if row['note'] else ""; crm_url = row['crm_link'] if row['crm_link'] else "#"
     
     with st.container(border=True):
         c_info, c_note, c_edit = st.columns([4, 5, 1])
         with c_info:
             st.markdown(f"#### {row['name']}")
             rid = str(row['crm_id']).strip()
-            # ID VỚI SMART LINK & COPY ICON
-            st.markdown(f"""
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                    <span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span>
-                    <a href="{crm_url}" target="_blank" style="color:#e83e8c;text-decoration:none;font-weight:bold;background:#fef1f6;padding:2px 6px;border-radius:4px;border:1px solid #fce4ec;">🔗 {rid}</a>
-                    <span onclick="navigator.clipboard.writeText('{rid}');alert('Copied ID!')" style="cursor:pointer;font-size:14px;">📋</span>
-                </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><a href="{crm_url}" target="_blank" style="color:#e83e8c;text-decoration:none;font-weight:bold;background:#fef1f6;padding:2px 6px;border-radius:4px;border:1px solid #fce4ec;">🔗 {rid}</a><span onclick="navigator.clipboard.writeText('{rid}');alert('Copied ID!')" style="cursor:pointer;font-size:14px;">📋</span></div>""", unsafe_allow_html=True)
             p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); em = str(row['email']).strip(); n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span><a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a><a href="mailto:{em}?body={m_e}">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a></div>""", unsafe_allow_html=True)
             if p_w and p_w not in ['0', '']: st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
-            st.caption(f"📍 State: {row['state']}")
 
         with c_note:
             st.markdown(f'<div class="history-container">{curr_h}</div>', unsafe_allow_html=True)
@@ -130,9 +129,14 @@ for _, row in leads_df.iterrows():
                 es = st.text_input("State", value=row['state'], key=f"es_{lid}")
                 el = st.text_input("Link CRM", value=row['crm_link'] if row['crm_link'] else "", key=f"el_{lid}")
                 
-                if st.button("Save ✅", key=f"sv_{lid}"):
+                if st.button("Save ✅", key=f"sv_{lid}", use_container_width=True):
                     conn.execute('UPDATE leads SET name=?, crm_id=?, cell=?, work=?, email=?, state=?, crm_link=? WHERE id=?', (en, ei, ec, ew, ee, es, el, lid))
                     conn.commit(); st.rerun()
-                if st.button("Del 🗑️", key=f"del_{lid}"):
-                    conn.execute('DELETE FROM leads WHERE id=?', (lid,)); conn.commit(); st.rerun()
+                
+                st.divider()
+                # XÓA KHÁCH HÀNG: Phải qua bước xác nhận
+                with st.expander("Xóa khách hàng 🗑️"):
+                    st.error("Hành động này không thể hoàn tác!")
+                    if st.button("Xác nhận xóa khách", key=f"conf_del_{lid}", type="primary", use_container_width=True):
+                        conn.execute('DELETE FROM leads WHERE id=?', (lid,)); conn.commit(); st.rerun()
         st.divider()
