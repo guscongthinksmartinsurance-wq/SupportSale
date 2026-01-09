@@ -21,7 +21,7 @@ def init_db():
 conn = init_db()
 
 # --- 2. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="TMC CRM PRO V24.3", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V24.4", layout="wide")
 
 st.markdown("""
     <style>
@@ -86,7 +86,7 @@ with st.sidebar:
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note, crm_link) VALUES (?,?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", "", cl))
                 conn.commit(); st.rerun()
 
-# --- 5. BỘ LỌC & TÌM KIẾM (MỚI) ---
+# --- 5. BỘ LỌC & TÌM KIẾM ---
 st.title("💼 Pipeline Processing")
 
 c_search, c_slider = st.columns([7, 3])
@@ -96,7 +96,7 @@ with c_search:
 with c_slider:
     days = st.slider("Khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
-# Đọc và lọc dữ liệu
+# Đọc dữ liệu
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 
 # Lọc theo Slider ngày
@@ -105,14 +105,15 @@ if days > 0:
     mask = (leads_df['last_interact_dt'].isna()) | ((datetime.now() - leads_df['last_interact_dt']).dt.days >= days)
     leads_df = leads_df[mask]
 
-# Lọc theo Search Query
+# Lọc theo Search Query (Xử lý ép kiểu String để không lỗi)
 if query:
     q = query.lower()
+    # Ép kiểu dữ liệu toàn bộ DataFrame về String để tìm kiếm an toàn
     leads_df = leads_df[
-        leads_df['name'].str.lower().contains(q, na=False) | 
-        leads_df['crm_id'].str.lower().contains(q, na=False) | 
-        leads_df['cell'].str.contains(q, na=False) | 
-        leads_df['work'].str.contains(q, na=False)
+        leads_df['name'].astype(str).str.lower().str.contains(q) | 
+        leads_df['crm_id'].astype(str).str.lower().str.contains(q) | 
+        leads_df['cell'].astype(str).str.contains(q) | 
+        leads_df['work'].astype(str).str.contains(q)
     ]
 
 st.divider()
