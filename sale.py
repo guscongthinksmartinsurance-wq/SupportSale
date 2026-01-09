@@ -21,20 +21,14 @@ def init_db():
 conn = init_db()
 
 # --- 2. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="TMC CRM PRO V24.2", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V24.3", layout="wide")
 
 st.markdown("""
     <style>
     .history-container {
-        background-color: #ffffff;
-        border: 1px solid #e1e4e8;
-        border-radius: 6px;
-        padding: 10px;
-        height: 150px;
-        overflow-y: auto;
-        font-family: sans-serif;
-        font-size: 13px;
-        color: #24292e;
+        background-color: #ffffff; border: 1px solid #e1e4e8; border-radius: 6px;
+        padding: 10px; height: 150px; overflow-y: auto; font-family: sans-serif;
+        font-size: 13px; color: #24292e;
     }
     .history-entry { border-bottom: 1px dashed #eee; margin-bottom: 5px; padding-bottom: 2px; }
     .timestamp { color: #0366d6; font-weight: bold; margin-right: 5px; }
@@ -58,10 +52,9 @@ def save_note_v24(lid, current_note, note_key):
         st.session_state[note_key] = ""
         st.session_state["needs_refresh"] = True
 
-# --- 4. SIDEBAR (BẢO MẬT NÚT XÓA) ---
+# --- 4. SIDEBAR ---
 with st.sidebar:
     st.title("🛠️ CRM Tools")
-    
     with st.expander("🔗 Add Link / Sales Kit"):
         with st.form("add_l", clear_on_submit=True):
             c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
@@ -70,25 +63,20 @@ with st.sidebar:
                 conn.commit(); st.rerun()
 
     df_links = pd.read_sql('SELECT * FROM links', conn)
-    
     with st.expander("🚀 Quick Links", expanded=True):
         for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
             c1, c2 = st.columns([8, 2])
             c1.markdown(f"**[{l['title']}]({l['url']})**")
-            # Xóa Link cần xác nhận qua Popover
-            with c2.popover("🗑️", help="Xóa link"):
-                st.warning("Xóa link này?")
+            with c2.popover("🗑️"):
                 if st.button("Confirm", key=f"dl_{l['id']}"):
                     conn.execute('DELETE FROM links WHERE id=?', (l['id'],)); conn.commit(); st.rerun()
 
     with st.expander("📚 Sales Kit", expanded=True):
         for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
             st.caption(v['title']); st.video(v['url'])
-            with st.popover("Xóa Video 🗑️"):
-                st.warning("Xóa video này?")
-                if st.button("Confirm", key=f"dv_{v['id']}"):
+            with st.popover("Xóa 🗑️"):
+                if st.button("Confirm Delete", key=f"dv_{v['id']}"):
                     conn.execute('DELETE FROM links WHERE id=?', (v['id'],)); conn.commit(); st.rerun()
-            st.divider()
     
     st.divider()
     with st.expander("➕ Add New Lead"):
@@ -98,10 +86,38 @@ with st.sidebar:
                 conn.execute('INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note, crm_link) VALUES (?,?,?,?,?,?,?,?,?,?)', (n, i, p, w, e, s, "New", "", "", cl))
                 conn.commit(); st.rerun()
 
-# --- 5. MAIN VIEW ---
+# --- 5. BỘ LỌC & TÌM KIẾM (MỚI) ---
 st.title("💼 Pipeline Processing")
+
+c_search, c_slider = st.columns([7, 3])
+with c_search:
+    query = st.text_input("🔍 Tìm kiếm nhanh (Tên, ID, SĐT...):", placeholder="Nhập tên, ID hoặc số điện thoại để lọc...")
+
+with c_slider:
+    days = st.slider("Khách chưa đụng tới quá (ngày):", 0, 90, 0)
+
+# Đọc và lọc dữ liệu
 leads_df = pd.read_sql('SELECT * FROM leads ORDER BY id DESC', conn)
 
+# Lọc theo Slider ngày
+if days > 0:
+    leads_df['last_interact_dt'] = pd.to_datetime(leads_df['last_interact'], errors='coerce')
+    mask = (leads_df['last_interact_dt'].isna()) | ((datetime.now() - leads_df['last_interact_dt']).dt.days >= days)
+    leads_df = leads_df[mask]
+
+# Lọc theo Search Query
+if query:
+    q = query.lower()
+    leads_df = leads_df[
+        leads_df['name'].str.lower().contains(q, na=False) | 
+        leads_df['crm_id'].str.lower().contains(q, na=False) | 
+        leads_df['cell'].str.contains(q, na=False) | 
+        leads_df['work'].str.contains(q, na=False)
+    ]
+
+st.divider()
+
+# --- 6. RENDER DỮ LIỆU ---
 for _, row in leads_df.iterrows():
     lid = row['id']; curr_h = row['note'] if row['note'] else ""; crm_url = row['crm_link'] if row['crm_link'] else "#"
     
@@ -128,15 +144,11 @@ for _, row in leads_df.iterrows():
                 ee = st.text_input("Email", value=row['email'], key=f"ee_{lid}")
                 es = st.text_input("State", value=row['state'], key=f"es_{lid}")
                 el = st.text_input("Link CRM", value=row['crm_link'] if row['crm_link'] else "", key=f"el_{lid}")
-                
                 if st.button("Save ✅", key=f"sv_{lid}", use_container_width=True):
                     conn.execute('UPDATE leads SET name=?, crm_id=?, cell=?, work=?, email=?, state=?, crm_link=? WHERE id=?', (en, ei, ec, ew, ee, es, el, lid))
                     conn.commit(); st.rerun()
-                
                 st.divider()
-                # XÓA KHÁCH HÀNG: Phải qua bước xác nhận
                 with st.expander("Xóa khách hàng 🗑️"):
-                    st.error("Hành động này không thể hoàn tác!")
-                    if st.button("Xác nhận xóa khách", key=f"conf_del_{lid}", type="primary", use_container_width=True):
+                    if st.button("Xác nhận xóa", key=f"conf_del_{lid}", type="primary", use_container_width=True):
                         conn.execute('DELETE FROM leads WHERE id=?', (lid,)); conn.commit(); st.rerun()
         st.divider()
