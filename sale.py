@@ -21,7 +21,7 @@ def init_db():
 conn = init_db()
 
 # --- 2. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="TMC CRM PRO V24.4", layout="wide")
+st.set_page_config(page_title="TMC_PRO", layout="wide")
 
 st.markdown("""
     <style>
@@ -54,7 +54,7 @@ def save_note_v24(lid, current_note, note_key):
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
-    st.title("🛠️ CRM Tools")
+    st.title("🛠️ TMC Tools")
     with st.expander("🔗 Add Link / Sales Kit"):
         with st.form("add_l", clear_on_submit=True):
             c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
@@ -71,7 +71,7 @@ with st.sidebar:
                 if st.button("Confirm", key=f"dl_{l['id']}"):
                     conn.execute('DELETE FROM links WHERE id=?', (l['id'],)); conn.commit(); st.rerun()
 
-    with st.expander("📚 Sales Kit", expanded=True):
+    with st.expander("📚 Link Youtube", expanded=True):
         for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
             st.caption(v['title']); st.video(v['url'])
             with st.popover("Xóa 🗑️"):
@@ -87,7 +87,7 @@ with st.sidebar:
                 conn.commit(); st.rerun()
 
 # --- 5. BỘ LỌC & TÌM KIẾM ---
-st.title("💼 Pipeline Processing")
+st.title("💼 Danh Sách")
 
 c_search, c_slider = st.columns([7, 3])
 with c_search:
@@ -153,3 +153,4 @@ for _, row in leads_df.iterrows():
                     if st.button("Xác nhận xóa", key=f"conf_del_{lid}", type="primary", use_container_width=True):
                         conn.execute('DELETE FROM leads WHERE id=?', (lid,)); conn.commit(); st.rerun()
         st.divider()
+
