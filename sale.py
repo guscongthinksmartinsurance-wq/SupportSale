@@ -3,10 +3,10 @@ import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import urllib.parse
-import re  # ĐÃ THÊM DÒNG NÀY ĐỂ HẾT LỖI
+import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V31.6", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V31.7", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -17,7 +17,7 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CSS GIAO DIỆN ---
+# --- 2. CSS GIAO DIỆN CHUẨN ---
 st.markdown("""
     <style>
     .history-container {
@@ -35,15 +35,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC LÀM SẠCH NOTE (CÓ XUỐNG DÒNG) ---
+# --- 3. LOGIC XỬ LÝ TEXT & NOTE ---
 def clean_html_for_edit(raw_html):
-    if not raw_html or str(raw_html) == 'nan':
-        return ""
-    # Thay thế thẻ đóng div bằng dấu xuống dòng để không dính chùm
+    if not raw_html or str(raw_html) == 'nan': return ""
     text = str(raw_html).replace('</div>', '\n')
     cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', text)
-    return cleantext.strip()
+    return re.sub(cleanr, '', text).strip()
+
+def format_phone(val):
+    if pd.isna(val) or str(val).lower() == 'nan' or str(val).strip() == '': return ""
+    return str(val).replace('.0', '').strip()
 
 # --- 4. LOGIC LƯU NOTE NHANH ---
 def save_note_v31(idx, current_note, note_key):
@@ -66,13 +67,13 @@ with st.sidebar:
         list_links = df_links[df_links['category'] == 'Quick Link']
         sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_links['title'].tolist(), key="sb_l")
         if sel_l != "-- Chọn --":
-            st.markdown(f"🚀 [Mở ngay: {sel_l}]({list_links[list_links['title'] == sel_l]['url'].values[0]})")
+            st.markdown(f"🚀 [Mở ngay]({list_links[list_links['title'] == sel_l]['url'].values[0]})")
     with st.expander("📁 Danh sách Sales Kit"):
         list_sk = df_links[df_links['category'] == 'Sales Kit']
         sel_sk = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_sk['title'].tolist(), key="sb_sk")
         if sel_sk != "-- Chọn --":
-            st.markdown(f"📂 [Xem: {sel_sk}]({list_sk[list_sk['title'] == sel_sk]['url'].values[0]})")
-    with st.expander("➕ Thêm Link / Sales Kit mới"):
+            st.markdown(f"📂 [Xem]({list_sk[list_sk['title'] == sel_sk]['url'].values[0]})")
+    with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("form_add_link"):
             cat_l = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); tit_l = st.text_input("Tiêu đề"); url_l = st.text_input("URL")
             if st.form_submit_button("Lưu Link"):
@@ -98,8 +99,9 @@ if not leads_df.empty:
 
     for idx, row in filtered.iterrows():
         curr_h = str(row['note']) if str(row['note']) != 'nan' else ""
-        work = str(row['work']).replace('.0', '').strip() if str(row['work']) != 'nan' else ""
-        cell = str(row['cell']).replace('.0', '').strip() if str(row['cell']) != 'nan' else ""
+        # FIX TRIỆT ĐỂ LỖI Series Object (AttributeError)
+        cell = format_phone(row.get('cell', ''))
+        work = format_phone(row.get('work', ''))
         
         with st.container(border=True):
             ci, cn, ce = st.columns([4.5, 5, 0.5])
