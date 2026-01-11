@@ -2,25 +2,25 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import urllib.parse
+from sqlalchemy import text # Thêm thư viện này để fix lỗi image_32036b
 
-# --- 1. KẾT NỐI DATABASE ONLINE (POSTGRES) ---
-# Streamlit tự động quản lý kết nối qua st.connection
+# --- 1. KẾT NỐI DATABASE ONLINE (SUPABASE) ---
 conn = st.connection("postgresql", type="sql")
 
 def init_db():
-    # Tạo bảng nếu chưa có (Dùng cú pháp Postgres)
     with conn.session as s:
-        s.execute('''CREATE TABLE IF NOT EXISTS leads 
+        # Bọc câu lệnh trong text() để Postgres hiểu
+        s.execute(text('''CREATE TABLE IF NOT EXISTS leads 
             (id SERIAL PRIMARY KEY, name TEXT, crm_id TEXT, cell TEXT, 
-             work TEXT, email TEXT, state TEXT, status TEXT, last_interact TEXT, note TEXT, crm_link TEXT)''')
-        s.execute('''CREATE TABLE IF NOT EXISTS links 
-            (id SERIAL PRIMARY KEY, category TEXT, title TEXT, url TEXT)''')
+             work TEXT, email TEXT, state TEXT, status TEXT, last_interact TEXT, note TEXT, crm_link TEXT)'''))
+        s.execute(text('''CREATE TABLE IF NOT EXISTS links 
+            (id SERIAL PRIMARY KEY, category TEXT, title TEXT, url TEXT)'''))
         s.commit()
 
 init_db()
 
 # --- 2. CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="TMC CRM CLOUD V25", layout="wide")
+st.set_page_config(page_title="TMC CRM CLOUD V25.1", layout="wide")
 
 st.markdown("""
     <style>
@@ -48,7 +48,7 @@ def save_note_v25(lid, current_note, note_key):
         
         with conn.session as s:
             s.execute(
-                "UPDATE leads SET last_interact = :t, note = :n WHERE id = :id",
+                text("UPDATE leads SET last_interact = :t, note = :n WHERE id = :id"),
                 {"t": now.strftime("%Y-%m-%d %H:%M:%S"), "n": combined, "id": lid}
             )
             s.commit()
@@ -63,31 +63,33 @@ with st.sidebar:
             c = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); t = st.text_input("Tên"); u = st.text_input("URL")
             if st.form_submit_button("Lưu"):
                 with conn.session as s:
-                    s.execute("INSERT INTO links (category, title, url) VALUES (:c, :t, :u)", {"c": c, "t": t, "u": u})
+                    s.execute(text("INSERT INTO links (category, title, url) VALUES (:c, :t, :u)"), {"c": c, "t": t, "u": u})
                     s.commit()
                 st.rerun()
 
     df_links = conn.query("SELECT * FROM links", ttl=0)
-    with st.expander("🚀 Quick Links", expanded=True):
-        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
-            c1, c2 = st.columns([8, 2])
-            c1.markdown(f"**[{l['title']}]({l['url']})**")
-            with c2.popover("🗑️"):
-                if st.button("Confirm", key=f"dl_{l['id']}"):
-                    with conn.session as s:
-                        s.execute("DELETE FROM links WHERE id = :id", {"id": l['id']})
-                        s.commit()
-                    st.rerun()
+    if not df_links.empty:
+        with st.expander("🚀 Quick Links", expanded=True):
+            for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
+                c1, c2 = st.columns([8, 2])
+                c1.markdown(f"**[{l['title']}]({l['url']})**")
+                with c2.popover("🗑️"):
+                    if st.button("Confirm", key=f"dl_{l['id']}"):
+                        with conn.session as s:
+                            s.execute(text("DELETE FROM links WHERE id = :id"), {"id": l['id']})
+                            s.commit()
+                        st.rerun()
 
-    with st.expander("📚 Sales Kit", expanded=True):
-        for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
-            st.caption(v['title']); st.video(v['url'])
-            with st.popover("Xóa 🗑️"):
-                if st.button("Confirm Delete", key=f"dv_{v['id']}"):
-                    with conn.session as s:
-                        s.execute("DELETE FROM links WHERE id = :id", {"id": v['id']})
-                        s.commit()
-                    st.rerun()
+        with st.expander("📚 Sales Kit", expanded=True):
+            for _, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
+                st.caption(v['title']); st.video(v['url'])
+                with st.popover("Xóa 🗑️"):
+                    if st.button("Confirm Delete", key=f"dv_{v['id']}"):
+                        with conn.session as s:
+                            s.execute(text("DELETE FROM links WHERE id = :id"), {"id": v['id']})
+                            s.commit()
+                        st.rerun()
+                st.divider()
     
     st.divider()
     with st.expander("➕ Add New Lead"):
@@ -95,8 +97,8 @@ with st.sidebar:
             n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell"); w = st.text_input("Work"); e = st.text_input("Email"); s = st.text_input("State"); cl = st.text_input("Link CRM")
             if st.form_submit_button("Lưu Lead"):
                 with conn.session as s:
-                    s.execute("""INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note, crm_link) 
-                              VALUES (:n, :i, :p, :w, :e, :s, 'New', '', '', :cl)""", 
+                    s.execute(text("""INSERT INTO leads (name, crm_id, cell, work, email, state, status, last_interact, note, crm_link) 
+                              VALUES (:n, :i, :p, :w, :e, :s, 'New', '', '', :cl)"""), 
                               {"n": n, "i": i, "p": p, "w": w, "e": e, "s": s, "cl": cl})
                     s.commit()
                 st.rerun()
@@ -114,19 +116,20 @@ with c_slider:
 # Đọc dữ liệu từ Postgres
 leads_df = conn.query("SELECT * FROM leads ORDER BY id DESC", ttl=0)
 
-# Lọc theo Slider và Search (Xử lý trên DataFrame cho nhanh)
-if days_limit > 0:
-    leads_df['last_interact_dt'] = pd.to_datetime(leads_df['last_interact'], errors='coerce')
-    mask = (leads_df['last_interact_dt'].isna()) | ((datetime.now() - leads_df['last_interact_dt']).dt.days >= days_limit)
-    leads_df = leads_df[mask]
+# Lọc dữ liệu
+if not leads_df.empty:
+    if days_limit > 0:
+        leads_df['last_interact_dt'] = pd.to_datetime(leads_df['last_interact'], errors='coerce')
+        mask = (leads_df['last_interact_dt'].isna()) | ((datetime.now() - leads_df['last_interact_dt']).dt.days >= days_limit)
+        leads_df = leads_df[mask]
 
-if query:
-    q = query.lower()
-    leads_df = leads_df[
-        leads_df['name'].astype(str).str.lower().str.contains(q) | 
-        leads_df['crm_id'].astype(str).str.lower().str.contains(q) | 
-        leads_df['cell'].astype(str).str.contains(q)
-    ]
+    if query:
+        q = query.lower()
+        leads_df = leads_df[
+            leads_df['name'].astype(str).str.lower().str.contains(q) | 
+            leads_df['crm_id'].astype(str).str.lower().str.contains(q) | 
+            leads_df['cell'].astype(str).str.contains(q)
+        ]
 
 st.divider()
 
@@ -159,7 +162,7 @@ for _, row in leads_df.iterrows():
                 el = st.text_input("Link CRM", value=row['crm_link'] if row['crm_link'] else "", key=f"el_{lid}")
                 if st.button("Save ✅", key=f"sv_{lid}", use_container_width=True):
                     with conn.session as s:
-                        s.execute("""UPDATE leads SET name=:n, crm_id=:i, cell=:c, work=:w, email=:e, state=:s, crm_link=:cl WHERE id=:id""", 
+                        s.execute(text("""UPDATE leads SET name=:n, crm_id=:i, cell=:c, work=:w, email=:e, state=:s, crm_link=:cl WHERE id=:id"""), 
                                   {"n": en, "i": ei, "c": ec, "w": ew, "e": ee, "s": es, "cl": el, "id": lid})
                         s.commit()
                     st.rerun()
@@ -167,7 +170,7 @@ for _, row in leads_df.iterrows():
                 with st.expander("Xóa khách hàng 🗑️"):
                     if st.button("Xác nhận xóa", key=f"conf_del_{lid}", type="primary", use_container_width=True):
                         with conn.session as s:
-                            s.execute("DELETE FROM leads WHERE id = :id", {"id": lid})
+                            s.execute(text("DELETE FROM leads WHERE id = :id"), {"id": lid})
                             s.commit()
                         st.rerun()
         st.divider()
