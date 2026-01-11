@@ -6,16 +6,14 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V32", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V32.1", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
     try:
         df = conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0)
-        if df is None or df.empty:
-            return pd.DataFrame()
-        return df.dropna(how='all')
-    except Exception:
+        return df if df is not None else pd.DataFrame()
+    except:
         return pd.DataFrame()
 
 def save_data(df, worksheet):
@@ -23,7 +21,7 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CSS CHUẨN ---
+# --- 2. CSS GIAO DIỆN ---
 st.markdown("""
     <style>
     .history-container {
@@ -41,16 +39,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC TEXT ---
-def clean_html_for_edit(raw_html):
-    if not raw_html or str(raw_html) == 'nan': return ""
-    text = str(raw_html).replace('</div>', '\n')
-    cleanr = re.compile('<.*?>')
-    return re.sub(cleanr, '', text).strip()
-
-def format_phone(val):
-    if pd.isna(val) or str(val).lower() == 'nan' or str(val).strip() == '': return ""
+# --- 3. LOGIC XỬ LÝ TEXT AN TOÀN ---
+def safe_str(val):
+    if pd.isna(val) or val is None: return ""
     return str(val).replace('.0', '').strip()
+
+def clean_html_for_edit(raw_html):
+    text = safe_str(raw_html).replace('</div>', '\n')
+    return re.sub(re.compile('<.*?>'), '', text).strip()
 
 # --- 4. LOGIC LƯU NOTE ---
 def save_note_v32(idx, current_note, note_key):
@@ -58,7 +54,7 @@ def save_note_v32(idx, current_note, note_key):
     if new_txt and new_txt.strip():
         now = datetime.now()
         entry = f"<div class='history-entry'><span class='timestamp'>[{now.strftime('%m/%d %H:%M')}]</span>{new_txt}</div>"
-        combined = entry + str(current_note)
+        combined = entry + safe_str(current_note)
         df = load_data("leads")
         if not df.empty:
             df.at[idx, 'note'] = combined
@@ -66,31 +62,25 @@ def save_note_v32(idx, current_note, note_key):
             save_data(df, "leads")
             st.session_state[note_key] = ""; st.rerun()
 
-# --- 5. SIDEBAR (CHỐT CHẶN AN TOÀN) ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
     
-    # Quick Links
     with st.expander("🔗 Danh sách Quick Links"):
         if not df_links.empty and 'category' in df_links.columns:
-            list_links = df_links[df_links['category'] == 'Quick Link']
-            if not list_links.empty:
-                sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_links['title'].tolist(), key="sb_l")
-                if sel_l != "-- Chọn --":
-                    st.markdown(f"🚀 [Mở ngay]({list_links[list_links['title'] == sel_l]['url'].values[0]})")
-        else: st.info("Chưa có dữ liệu link.")
+            list_l = df_links[df_links['category'] == 'Quick Link']
+            sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_l['title'].tolist(), key="sb_l")
+            if sel_l != "-- Chọn --":
+                st.markdown(f"🚀 [Mở ngay]({list_l[list_l['title'] == sel_l]['url'].values[0]})")
     
-    # Sales Kit
     with st.expander("📁 Danh sách Sales Kit"):
         if not df_links.empty and 'category' in df_links.columns:
-            list_sk = df_links[df_links['category'] == 'Sales Kit']
-            if not list_sk.empty:
-                sel_sk = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_sk['title'].tolist(), key="sb_sk")
-                if sel_sk != "-- Chọn --":
-                    st.markdown(f"📂 [Xem]({list_sk[list_sk['title'] == sel_sk]['url'].values[0]})")
-    
-    # Form Add Link & Lead (Giữ nguyên cấu trúc anh duyệt)
+            list_s = df_links[df_links['category'] == 'Sales Kit']
+            sel_s = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_s['title'].tolist(), key="sb_s")
+            if sel_s != "-- Chọn --":
+                st.markdown(f"📂 [Xem]({list_s[list_s['title'] == sel_s]['url'].values[0]})")
+
     with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("f_link"):
             c=st.selectbox("Loại",["Quick Link","Sales Kit"]); t=st.text_input("Tiêu đề"); u=st.text_input("URL")
@@ -99,7 +89,7 @@ with st.sidebar:
     st.divider()
     with st.expander("➕ Thêm Khách Hàng Mới"):
         with st.form("f_lead"):
-            n=st.text_input("Họ tên"); i=st.text_input("ID"); c_p=st.text_input("Cellphone"); w_p=st.text_input("Workphone")
+            n=st.text_input("Họ tên"); i=st.text_input("CRM ID"); c_p=st.text_input("Cellphone"); w_p=st.text_input("Workphone")
             em=st.text_input("Email"); l_c=st.text_input("Link CRM"); s_t=st.selectbox("Status",["New","Contacted","Following","Closed"])
             if st.form_submit_button("Lưu Lead"):
                 df_leads_all = load_data("leads")
@@ -109,28 +99,33 @@ with st.sidebar:
 st.title("💼 Pipeline Processing")
 leads_df = load_data("leads")
 c1, c2 = st.columns([7, 3])
-q = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...")
+q = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...").lower()
 days_f = c2.slider("⏳ Không tương tác", 0, 90, 90)
 
 if not leads_df.empty:
-    filtered = leads_df[leads_df.apply(lambda r: q.lower() in str(r['name']).lower() or q.lower() in str(r['crm_id']).lower() or q.lower() in str(r['cell']).lower() or q.lower() in str(r['work']).lower(), axis=1)]
+    # Logic tìm kiếm an toàn: Bất kể ô nào trống cũng không lỗi
+    filtered = leads_df[leads_df.apply(lambda r: q in safe_str(r.get('name','')).lower() or 
+                                               q in safe_str(r.get('crm_id','')).lower() or 
+                                               q in safe_str(r.get('cell','')).lower() or 
+                                               q in safe_str(r.get('work','')).lower(), axis=1)]
+
     for idx, row in filtered.iterrows():
-        curr_h = str(row['note']) if str(row['note']) != 'nan' else ""
-        cell = format_phone(row.get('cell', ''))
-        work = format_phone(row.get('work', ''))
+        curr_h = safe_str(row.get('note', ''))
+        cell = safe_str(row.get('cell', ''))
+        work = safe_str(row.get('work', ''))
         with st.container(border=True):
             ci, cn, ce = st.columns([4.5, 5, 0.5])
             with ci:
-                st.markdown(f"<div style='display:flex;align-items:center;'><h4 style='margin:0;'>{row['name']}</h4><a href='{row.get('crm_link','#')}' target='_blank' class='id-badge'>🆔 {row['crm_id']}</a></div>", unsafe_allow_html=True)
-                n_e = urllib.parse.quote(str(row['name']))
+                st.markdown(f"<div style='display:flex;align-items:center;'><h4 style='margin:0;'>{row.get('name','N/A')}</h4><a href='{row.get('crm_link','#')}' target='_blank' class='id-badge'>🆔 {row.get('crm_id','-')}</a></div>", unsafe_allow_html=True)
+                n_e = urllib.parse.quote(safe_str(row.get('name','')))
                 st.markdown(f"<div style='margin-top:8px;display:flex;align-items:center;gap:10px;'>📱 Cell: <a href='tel:{cell}' class='contact-link'>{cell}</a><a href='rcmobile://sms?number={cell}'>💬</a><a href='mailto:{row.get('email','')}'>📧</a><a href='https://calendar.google.com/calendar/r/eventedit?text=Meeting_{n_e}' target='_blank'>📅</a></div>", unsafe_allow_html=True)
                 st.markdown(f"📞 Work: <a href='tel:{work}' class='contact-link'>{work}</a>", unsafe_allow_html=True)
-                st.caption(f"🏷️ Status: {row['status']}")
+                st.caption(f"🏷️ Status: {row.get('status','New')}")
             with cn:
                 st.markdown(f'<div class="history-container">{curr_h}</div>', unsafe_allow_html=True)
-                col_n1, col_n2 = st.columns([8.5, 1.5])
-                with col_n1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v32, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
-                with col_n2:
+                cn1, cn2 = st.columns([8.5, 1.5])
+                with cn1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v32, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
+                with cn2:
                     with st.popover("📝"):
                         cl_h = clean_html_for_edit(curr_h)
                         new_h = st.text_area("Sửa lịch sử", value=cl_h, height=250)
@@ -141,13 +136,13 @@ if not leads_df.empty:
             with ce:
                 with st.popover("⚙️"):
                     with st.form(f"ed_{idx}"):
-                        un=st.text_input("Tên",value=row['name']); ui=st.text_input("ID",value=row['crm_id'])
+                        un=st.text_input("Tên",value=row.get('name','')); ui=st.text_input("ID",value=row.get('crm_id',''))
                         uc=st.text_input("Cell",value=cell); uw=st.text_input("Work",value=work)
                         uem=st.text_input("Email",value=row.get('email','')); ul=st.text_input("Link CRM",value=row.get('crm_link',''))
-                        us=st.selectbox("Status",["New","Contacted","Following","Closed"], index=0)
+                        us=st.selectbox("Status",["New","Contacted","Following","Closed"])
                         if st.form_submit_button("Cập nhật"):
                             f=load_data("leads"); f.loc[idx,['name','crm_id','cell','work','email','crm_link','status']]=[un,ui,uc,uw,uem,ul,us]
                             save_data(f,"leads"); st.rerun()
                     if st.button("🗑️ Xóa", key=f"d_{idx}", type="primary"):
                         f=load_data("leads"); save_data(f.drop(idx),"leads"); st.rerun()
-else: st.info("Đang kết nối dữ liệu từ Google Sheet...")
+else: st.info("Hệ thống đang trống hoặc đang tải dữ liệu...")
