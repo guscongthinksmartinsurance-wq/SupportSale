@@ -6,7 +6,7 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V36.5", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V36.6", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -23,7 +23,7 @@ def load_data(worksheet):
 
 def save_data(df, worksheet):
     if df is None or df.empty:
-        st.error("Dữ liệu trống! Đã chặn thao tác lưu để bảo vệ database.")
+        st.error("Dữ liệu trống! Đã chặn thao tác lưu.")
         return
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df.fillna(""))
     st.cache_data.clear()
@@ -33,7 +33,6 @@ def clean_phone_to_int(phone_str):
     return re.sub(r'\D', '', str(phone_str))
 
 def clean_html_for_edit(raw_html):
-    # Chuyển các thẻ </div> và <br> thành dòng mới để dễ sửa
     t = str(raw_html).replace('</div>', '\n').replace('<br>', '\n')
     return re.sub(r'<[^>]*>', '', t).strip()
 
@@ -55,7 +54,6 @@ st.markdown("""
         border: 1px solid #f8bbd0; margin-left: 10px;
     }
     .owner-tag { color: #6c757d; font-size: 12px; font-style: italic; display: block; margin-bottom: 5px; }
-    .icon-gap { display: flex; align-items: center; gap: 15px; margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -76,7 +74,8 @@ with st.sidebar:
                     ok, no = st.columns(2)
                     if ok.button("Xóa", key=f"re_ql_{idx}", type="primary"):
                         save_data(df_links.drop(idx), "links"); del st.session_state[f"conf_ql_{idx}"]; st.rerun()
-                    if no.button("Hủy", key=f"can_ql_{idx}"): del st.session_state[f"conf_ql_{idx}"]; st.rerun()
+                    if no.button("Hủy", key=f"can_ql_{idx}"): 
+                        del st.session_state[f"conf_ql_{idx}"]; st.rerun()
 
     with st.expander("📁 Sales Kit"):
         if not df_links.empty:
@@ -90,7 +89,8 @@ with st.sidebar:
                     ok, no = st.columns(2)
                     if ok.button("Xóa", key=f"re_sk_{idx}", type="primary"):
                         save_data(df_links.drop(idx), "links"); del st.session_state[f"conf_sk_{idx}"]; st.rerun()
-                    if no.button("Hủy", key=f"can_sk_{idx}"): del st.session_state[f"conf_sk_{idx}"]; st.rerun()
+                    if no.button("Hủy", key=f"can_sk_{idx}"): 
+                        del st.session_state[f"conf_sk_{idx}"]; st.rerun()
                 st.divider()
 
     with st.expander("➕ Thêm Link"):
@@ -136,7 +136,7 @@ if not leads_df.empty:
                 st.markdown(f"<span class='owner-tag'>📍 State: {row.get('state','-')} | 👤 Owner: {row.get('owner','-')}</span>", unsafe_allow_html=True)
                 cell = row['cell']; n_e = urllib.parse.quote(str(row['name']))
                 st.markdown(f"""
-                    <div class='icon-gap'>
+                    <div style='display:flex; gap:15px; margin-top:10px;'>
                         <span>📱 Cell: <a href='tel:{cell}' class='contact-link'>{cell}</a></span>
                         <a href='rcmobile://sms?number={cell}'>💬</a>
                         <a href='mailto:{row['email']}'>📧</a>
@@ -149,47 +149,28 @@ if not leads_df.empty:
             with cn:
                 note_h = str(row.get('note', ''))
                 st.markdown(f'<div class="history-container">{note_h}</div>', unsafe_allow_html=True)
-                
-                # Cột chức năng cho Note
-                cn1, cn2 = st.columns([8, 2])
-                with cn1:
+                col_n1, col_n2 = st.columns([8.5, 1.5])
+                with col_n1:
                     with st.form(key=f"form_note_{idx}", clear_on_submit=True):
                         n_input = st.text_input("Ghi nhanh...", label_visibility="collapsed")
                         if st.form_submit_button("Lưu"):
                             if n_input.strip():
                                 now_str = datetime.now().strftime("[%m/%d %H:%M]")
-                                new_entry = f"<div class='history-entry'><span style='color:#007bff;font-weight:bold;'>{now_str}</span> {n_input}</div>"
-                                full_df = load_data("leads")
-                                full_df.at[idx, 'note'] = new_entry + str(full_df.at[idx, 'note'])
-                                full_df.at[idx, 'last_interact'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                save_data(full_df, "leads"); st.rerun()
-                
-                with cn2:
-                    # NÚT CHỈNH SỬA & XÓA NOTE NẰM Ở ĐÂY
+                                entry = f"<div class='history-entry'><span style='color:#007bff;font-weight:bold;'>{now_str}</span> {n_input}</div>"
+                                f_df = load_data("leads")
+                                f_df.at[idx, 'note'] = entry + str(f_df.at[idx, 'note'])
+                                f_df.at[idx, 'last_interact'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                save_data(f_df, "leads"); st.rerun()
+                with col_n2:
                     with st.popover("📝"):
-                        st.subheader("Chỉnh sửa lịch sử Note")
+                        st.write("✏️ Sửa Note")
                         clean_note = clean_html_for_edit(note_h)
-                        edited_note = st.text_area("Nội dung (Mỗi dòng là 1 entry)", value=clean_note, height=200)
-                        
-                        col_save, col_clear = st.columns(2)
-                        if col_save.button("Cập nhật", key=f"btn_edit_{idx}"):
+                        edited_note = st.text_area("Nội dung", value=clean_note, height=200, key=f"area_{idx}")
+                        if st.button("Cập nhật", key=f"up_{idx}"):
                             lines = edited_note.split('\n')
-                            formatted_note = "".join([f"<div class='history-entry'>{line}</div>" for line in lines if line.strip()])
-                            full_df = load_data("leads")
-                            full_df.at[idx, 'note'] = formatted_note
-                            save_data(full_df, "leads"); st.rerun()
-                        
-                        if col_clear.button("Xóa sạch", key=f"btn_clear_{idx}", type="primary"):
-                            st.session_state[f"conf_clear_{idx}"] = True
-                        
-                        if st.session_state.get(f"conf_clear_{idx}"):
-                            st.error("Xóa sạch lịch sử?")
-                            if st.button("Vâng, xóa hết", key=f"re_clear_{idx}"):
-                                full_df = load_data("leads")
-                                full_df.at[idx, 'note'] = ""
-                                save_data(full_df, "leads")
-                                del st.session_state[f"conf_clear_{idx}"]; st.rerun()
-                            st.button("Hủy", key=f"can_clear_{idx}")
+                            formatted = "".join([f"<div class='history-entry'>{line}</div>" for line in lines if line.strip()])
+                            f_df = load_data("leads"); f_df.at[idx, 'note'] = formatted
+                            save_data(f_df, "leads"); st.rerun()
 
             with ce:
                 with st.popover("⚙️"):
@@ -202,9 +183,12 @@ if not leads_df.empty:
                         if st.form_submit_button("Cập nhật Lead"):
                             f=load_data("leads"); f.loc[idx,['name','crm_id','cell','work','email','crm_link','state','owner','status']]=[un,ui,uc,uw,uem,ul,ust,uow,us]
                             save_data(f,"leads"); st.rerun()
-                    if st.button("🗑️ Lead", key=f"d_{idx}", type="primary"): st.session_state[f"c_del_{idx}"] = True
+                    if st.button("🗑️ Lead", key=f"d_{idx}", type="primary"):
+                        st.session_state[f"c_del_{idx}"] = True
                     if st.session_state.get(f"c_del_{idx}"):
+                        st.error("Xóa khách?")
                         ok, no = st.columns(2)
                         if ok.button("Xóa", key=f"ok_d_{idx}"):
                             f=load_data("leads"); save_data(f.drop(idx),"leads"); del st.session_state[f"c_del_{idx}"]; st.rerun()
-                        if no.button("Hủy", key=f"no_d_{idx}"): del st.session_state[f"c_del_{idx}"]; st.rerun()
+                        if no.button("Hủy", key=f"no_d_{idx}"):
+                            del st.session_state[f"c_del_{idx}"]; st.rerun()
