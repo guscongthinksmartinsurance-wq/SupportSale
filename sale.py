@@ -3,10 +3,10 @@ import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import urllib.parse
-import re
+import re  # ĐÃ THÊM DÒNG NÀY ĐỂ HẾT LỖI
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V31.5", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V31.6", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -39,12 +39,10 @@ st.markdown("""
 def clean_html_for_edit(raw_html):
     if not raw_html or str(raw_html) == 'nan':
         return ""
-    # Thay thế các thẻ đóng div bằng dấu xuống dòng để không bị dính chùm
+    # Thay thế thẻ đóng div bằng dấu xuống dòng để không dính chùm
     text = str(raw_html).replace('</div>', '\n')
-    # Xóa tất cả các thẻ HTML còn lại
     cleanr = re.compile('<.*?>')
     cleantext = re.sub(cleanr, '', text)
-    # Loại bỏ khoảng trắng thừa ở đầu/cuối
     return cleantext.strip()
 
 # --- 4. LOGIC LƯU NOTE NHANH ---
@@ -118,11 +116,9 @@ if not leads_df.empty:
                 with col_n1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v31, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
                 with col_n2:
                     with st.popover("📝"):
-                        # NỘI DUNG ĐÃ ĐƯỢC XUỐNG DÒNG RÕ RÀNG
                         clean_history = clean_html_for_edit(curr_h)
-                        new_h = st.text_area("Sửa lịch sử (Xuống dòng chuẩn)", value=clean_history, height=250)
+                        new_h = st.text_area("Sửa lịch sử", value=clean_history, height=250)
                         if st.button("Lưu lại", key=f"sn_{idx}"):
-                            # Chuyển đổi các dòng text thành HTML để hiển thị đẹp bên ngoài
                             lines = new_h.split('\n')
                             formatted_h = "".join([f"<div class='history-entry'>{line}</div>" for line in lines if line.strip()])
                             f_df = load_data("leads"); f_df.at[idx, 'note'] = formatted_h; save_data(f_df, "leads"); st.rerun()
