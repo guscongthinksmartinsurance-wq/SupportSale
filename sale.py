@@ -4,10 +4,9 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import urllib.parse
 import re
-import time
 
-# --- 1. KẾT NỐI & BẢO VỆ DỮ LIỆU TỐI CAO ---
-st.set_page_config(page_title="TMC CRM PRO V39", layout="wide")
+# --- 1. KẾT NỐI & BẢO VỆ DỮ LIỆU ---
+st.set_page_config(page_title="TMC CRM PRO V39.1", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -15,26 +14,23 @@ def load_data(worksheet):
         df = conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0)
         if df is not None and len(df) > 0:
             df = df.fillna("").astype(str)
-            # Triệt tiêu đuôi .0 cho ID và Phone ngay từ đầu
             for col in df.columns:
                 df[col] = df[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
             return df
         return pd.DataFrame()
-    except Exception as e:
+    except:
         return pd.DataFrame()
 
-def save_data(df, worksheet):
-    # CHỐT CHẶN CUỐI: Tuyệt đối không lưu nếu DataFrame rỗng hoặc mất quá nhiều dòng
-    if df is None or df.empty:
-        st.toast("🚨 Lỗi: Dữ liệu trống, đã chặn ghi đè!", icon="🛑")
+def save_data(df, worksheet, current_len=0):
+    # LỚP BẢO VỆ: Nếu số dòng mới ít hơn 50% số dòng cũ -> Chặn lưu (tránh mất data)
+    if df is None or df.empty or (current_len > 0 and len(df) < current_len * 0.5):
+        st.toast("🛑 Hệ thống chặn lưu để bảo vệ dữ liệu!", icon="🚨")
         return False
-    
     try:
         conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df.fillna(""))
         st.cache_data.clear()
         return True
-    except Exception as e:
-        st.error(f"Lỗi đường truyền Sheets: {e}")
+    except:
         return False
 
 # --- 2. HÀM HỖ TRỢ ---
@@ -69,59 +65,42 @@ with st.sidebar:
     
     with st.expander("🔗 Quick Links"):
         if not links_all.empty:
-            ql = links_all[links_all['category'] == 'Quick Link']
-            for idx, row in ql.iterrows():
+            for idx, row in links_all[links_all['category'] == 'Quick Link'].iterrows():
                 c1, c2 = st.columns([8, 2])
                 c1.markdown(f"🚀 [{row['title']}]({row['url']})")
-                if c2.button("🗑️", key=f"dql_{idx}"):
-                    if save_data(links_all.drop(idx), "links"): st.rerun()
+                if c2.button("🗑️", key=f"dql_{idx}_{row['title'][:3]}"):
+                    save_data(links_all.drop(idx), "links"); st.rerun()
 
     with st.expander("📁 Sales Kit"):
         if not links_all.empty:
-            sk = links_all[links_all['category'] == 'Sales Kit']
-            for idx, row in sk.iterrows():
+            for idx, row in links_all[links_all['category'] == 'Sales Kit'].iterrows():
                 st.markdown(f"📂 **{row['title']}**")
                 if "youtu" in row['url'].lower(): st.video(row['url'])
-                else: st.markdown(f"🔗 [Mở tài liệu]({row['url']})")
-                if st.button("🗑️ Xóa", key=f"dsk_{idx}"):
-                    if save_data(links_all.drop(idx), "links"): st.rerun()
+                else: st.markdown(f"🔗 [Mở]({row['url']})")
+                if st.button("🗑️ Xóa", key=f"dsk_{idx}_{row['title'][:3]}"):
+                    save_data(links_all.drop(idx), "links"); st.rerun()
                 st.divider()
 
     with st.expander("➕ Thêm Link"):
         with st.form("f_l", clear_on_submit=True):
             cat=st.selectbox("Loại",["Quick Link","Sales Kit"]); tit=st.text_input("Tiêu đề"); url=st.text_input("URL")
             if st.form_submit_button("Lưu"):
-                if tit and url:
-                    new_l = pd.concat([links_all, pd.DataFrame([{"category":cat,"title":tit,"url":url}])], ignore_index=True)
-                    save_data(new_l, "links"); st.rerun()
-
-    st.divider()
-    with st.expander("➕ Thêm Khách Hàng"):
-        with st.form("f_lead", clear_on_submit=True):
-            fn=st.text_input("Họ tên"); fi=st.text_input("CRM ID"); fc=st.text_input("Cell"); fw=st.text_input("Work")
-            fe=st.text_input("Email"); fl=st.text_input("Link CRM"); fst=st.text_input("State"); fow=st.text_input("Owner")
-            fs=st.selectbox("Status",["New","Contacted","Following","Closed"])
-            if st.form_submit_button("Lưu Lead"):
-                leads_all = load_data("leads")
-                new_row = {"name":fn,"crm_id":fi,"cell":fc,"work":fw,"email":fe,"crm_link":fl,"status":fs,"state":fst,"owner":fow,"note":"","last_interact":datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-                save_data(pd.concat([leads_all, pd.DataFrame([new_row])], ignore_index=True), "leads"); st.rerun()
+                save_data(pd.concat([links_all, pd.DataFrame([{"category":cat,"title":tit,"url":url}])], ignore_index=True), "links"); st.rerun()
 
 # --- 5. PIPELINE PROCESSING ---
 st.title("💼 Pipeline Processing")
 leads_main = load_data("leads")
 
 c_sch, c_sld = st.columns([7, 3])
-q = str(c_sch.text_input("🔍 Tìm Tên, ID, SĐT...", key="search_main")).lower().strip()
+q = str(c_sch.text_input("🔍 Tìm kiếm...", key="search_main")).lower().strip()
 q_num = clean_phone_search(q)
-days_limit = c_sld.slider("⏳ Không tương tác (ngày)", 0, 90, 90)
 
 if not leads_main.empty:
-    # Lọc tìm kiếm thông minh
     filtered = leads_main[leads_main.apply(lambda r: q in str(r.get('name','')).lower() or q in str(r.get('crm_id','')).lower() or (q_num != "" and q_num in clean_phone_search(r.get('cell',''))), axis=1)]
 
     for idx, row in filtered.iterrows():
-        # Tạo Key duy nhất cho từng khách để tránh lỗi Duplicate ID
-        u_key = f"{row.get('crm_id', idx)}"
+        # KHÓA ID DUY NHẤT: Kết hợp Index và ID để không bao giờ trùng
+        safe_id = f"{idx}_{row.get('crm_id', 'no_id')}"
         
         with st.container(border=True):
             ci, cn, ce = st.columns([4, 5.5, 0.5])
@@ -129,56 +108,43 @@ if not leads_main.empty:
                 st.markdown(f"<div><h4 style='margin:0;'>{row['name']}</h4><a href='{row['crm_link']}' target='_blank' class='id-badge'>🆔 {row['crm_id']}</a></div>", unsafe_allow_html=True)
                 st.markdown(f"<span style='color:grey; font-size:12px;'>📍 {row.get('state','-')} | 👤 {row.get('owner','-')}</span>", unsafe_allow_html=True)
                 cell = row['cell']; n_e = urllib.parse.quote(str(row['name']))
-                st.markdown(f"<div style='display:flex; gap:15px; margin-top:10px;'>📱 <a href='tel:{cell}' class='contact-link'>{cell}</a> <a href='rcmobile://sms?number={cell}'>💬</a> <a href='mailto:{row['email']}'>📧</a> <a href='https://calendar.google.com/calendar/r/eventedit?text=Meeting_{n_e}' target='_blank'>📅</a></div>", unsafe_allow_html=True)
-                st.caption(f"🏷️ {row['status']}")
+                st.markdown(f"<div style='display:flex; gap:15px; margin-top:10px;'>📱 <a href='tel:{cell}' class='contact-link'>{cell}</a> <a href='mailto:{row['email']}'>📧</a> <a href='https://calendar.google.com/calendar/r/eventedit?text=Meeting_{n_e}' target='_blank'>📅</a></div>", unsafe_allow_html=True)
             
             with cn:
                 note_h = str(row.get('note', ''))
                 st.markdown(f'<div class="history-container">{note_h}</div>', unsafe_allow_html=True)
                 
-                # FORM NHẬP NOTE NHANH VỚI KEY DUY NHẤT
-                with st.form(key=f"fn_form_{u_key}", clear_on_submit=True):
-                    ni = st.text_input("Ghi nhanh...", key=f"ni_input_{u_key}", label_visibility="collapsed")
-                    if st.form_submit_button("Lưu Note"):
+                with st.form(key=f"fn_form_{safe_id}", clear_on_submit=True):
+                    ni = st.text_input("Note nhanh...", key=f"ni_in_{safe_id}", label_visibility="collapsed")
+                    if st.form_submit_button("Lưu"):
                         if ni.strip():
-                            # Chống ghi đè bảng trống bằng cách load lại ngay lập tức
-                            fresh_leads = load_data("leads")
-                            if not fresh_leads.empty:
+                            fresh = load_data("leads")
+                            if not fresh.empty:
                                 now = datetime.now().strftime("[%m/%d %H:%M]")
-                                entry = f"<div class='history-entry'><span style='color:#007bff;font-weight:bold;'>{now}</span> {ni}</div>"
-                                fresh_leads.at[idx, 'note'] = entry + str(fresh_leads.at[idx, 'note'])
-                                fresh_leads.at[idx, 'last_interact'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                if save_data(fresh_leads, "leads"): st.rerun()
+                                entry = f"<div class='history-entry'><b>{now}</b> {ni}</div>"
+                                fresh.at[idx, 'note'] = entry + str(fresh.at[idx, 'note'])
+                                save_data(fresh, "leads", current_len=len(leads_main)); st.rerun()
                 
-                with st.popover("📝 Chỉnh sửa"):
-                    en = st.text_area("Nội dung Note", value=clean_html_for_edit(note_h), height=200, key=f"edit_area_{u_key}")
-                    if st.button("Cập nhật lịch sử", key=f"up_btn_{u_key}"):
-                        fresh_leads = load_data("leads")
-                        if not fresh_leads.empty:
+                with st.popover("📝 Sửa"):
+                    en = st.text_area("Nội dung", value=clean_html_for_edit(note_h), height=200, key=f"ed_ar_{safe_id}")
+                    if st.button("Cập nhật", key=f"up_bt_{safe_id}"):
+                        fresh = load_data("leads")
+                        if not fresh.empty:
                             fmt = "".join([f"<div class='history-entry'>{line}</div>" for line in en.split('\n') if line.strip()])
-                            fresh_leads.at[idx, 'note'] = fmt
-                            if save_data(fresh_leads, "leads"): st.rerun()
+                            fresh.at[idx, 'note'] = fmt
+                            save_data(fresh, "leads", current_len=len(leads_main)); st.rerun()
 
             with ce:
                 with st.popover("⚙️"):
-                    with st.form(f"ed_lead_{u_key}"):
-                        un=st.text_input("Tên",value=row['name']); ui=st.text_input("ID",value=row['crm_id'])
-                        uc=st.text_input("Cell",value=row['cell']); uem=st.text_input("Email",value=row['email'])
-                        ust=st.text_input("State",value=row.get('state','')); uow=st.text_input("Owner",value=row.get('owner',''))
-                        if st.form_submit_button("Lưu thay đổi"):
-                            f=load_data("leads")
-                            if not f.empty:
-                                f.loc[idx,['name','crm_id','cell','email','state','owner']]=[un,ui,uc,uem,ust,uow]
-                                save_data(f,"leads"); st.rerun()
-                    if st.button("🗑️ Xóa Lead", key=f"del_lead_{u_key}", type="primary"):
-                        st.session_state[f"conf_del_{u_key}"] = True
-                    if st.session_state.get(f"conf_del_{u_key}"):
+                    if st.button("🗑️ Xóa Lead", key=f"del_{safe_id}", type="primary"):
+                        st.session_state[f"conf_{safe_id}"] = True
+                    if st.session_state.get(f"conf_{safe_id}"):
                         ok, no = st.columns(2)
-                        if ok.button("Vâng", key=f"re_ok_{u_key}"):
-                            f=load_data("leads")
-                            if save_data(f.drop(idx), "leads"):
-                                del st.session_state[f"conf_del_{u_key}"]; st.rerun()
-                        if no.button("Hủy", key=f"re_no_{u_key}"):
-                            del st.session_state[f"conf_del_{u_key}"]; st.rerun()
+                        if ok.button("Vâng", key=f"y_{safe_id}"):
+                            f = load_data("leads")
+                            save_data(f.drop(idx), "leads", current_len=len(leads_main))
+                            del st.session_state[f"conf_{safe_id}"]; st.rerun()
+                        if no.button("Hủy", key=f"n_{safe_id}"):
+                            del st.session_state[f"conf_{safe_id}"]; st.rerun()
 else:
-    st.info("Hệ thống đang tải dữ liệu hoặc database đang trống. Nếu dữ liệu không hiện, anh hãy thử tải lại trang nhé.")
+    st.info("Đang tải dữ liệu...")
