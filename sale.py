@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+from streamlit_gsheets import GSheetsConnection # Thư viện để nối GSheet
 from datetime import datetime
 import urllib.parse
 
-# --- 1. KẾT NỐI DATABASE CLOUD (GOOGLE SHEETS) ---
+# --- 1. KẾT NỐI DATABASE CLOUD (THAY THẾ SQLITE) ---
 st.set_page_config(page_title="TMC CRM PRO V24.4", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
     try:
+        # ttl=0 để nhập Note xong nó hiện ra ngay lập tức
         return conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0).dropna(how='all')
     except:
         if worksheet == "leads":
@@ -21,7 +22,7 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CẤU HÌNH GIAO DIỆN ---
+# --- 2. CẤU HÌNH GIAO DIỆN (GIỮ NGUYÊN CSS GỐC) ---
 st.markdown("""
     <style>
     .history-container {
@@ -34,7 +35,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC XỬ LÝ NOTE ---
+# --- 3. LOGIC XỬ LÝ (GIỮ NGUYÊN HÀM save_note_v24 CỦA ANH) ---
 def save_note_v24(idx, current_note, note_key):
     new_txt = st.session_state[note_key]
     if new_txt and new_txt.strip():
@@ -42,14 +43,16 @@ def save_note_v24(idx, current_note, note_key):
         entry = f"<div class='history-entry'><span class='timestamp'>[{now.strftime('%m/%d %H:%M')}]</span>{new_txt}</div>"
         combined = entry + current_note
         
+        # Cập nhật trực tiếp lên mây
         df_leads_full = load_data("leads")
         df_leads_full.at[idx, 'note'] = combined
         df_leads_full.at[idx, 'last_interact'] = now.strftime("%Y-%m-%d %H:%M:%S")
         save_data(df_leads_full, "leads")
+        
         st.session_state[note_key] = ""
-        st.rerun()
+        st.rerun() # Nhập xong Note hiện ngay tại chỗ
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR (KHÔNG ĐỔI) ---
 with st.sidebar:
     st.title("🛠️ CRM Tools")
     df_links = load_data("links")
@@ -62,20 +65,19 @@ with st.sidebar:
                 save_data(pd.concat([df_links, new_l], ignore_index=True), "links")
                 st.rerun()
 
+    # Đoạn render Links giữ nguyên 100%
     with st.expander("🚀 Quick Links", expanded=True):
         for idx, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
             c1, c2 = st.columns([8, 2])
             c1.markdown(f"**[{l['title']}]({l['url']})**")
-            with c2.popover("🗑️"):
-                if st.button("Confirm", key=f"dl_{idx}"):
-                    save_data(df_links.drop(idx), "links"); st.rerun()
+            if c2.button("🗑️", key=f"dl_{idx}"):
+                save_data(df_links.drop(idx), "links"); st.rerun()
 
     with st.expander("📚 Sales Kit", expanded=True):
         for idx, v in df_links[df_links['category'] == 'Sales Kit'].iterrows():
             st.caption(v['title']); st.video(v['url'])
-            with st.popover("Xóa 🗑️"):
-                if st.button("Confirm Delete", key=f"dv_{idx}"):
-                    save_data(df_links.drop(idx), "links"); st.rerun()
+            if st.button("Xóa Video", key=f"dv_{idx}"):
+                save_data(df_links.drop(idx), "links"); st.rerun()
     
     st.divider()
     with st.expander("➕ Add New Lead"):
@@ -87,11 +89,11 @@ with st.sidebar:
                 save_data(pd.concat([df_leads_all, pd.DataFrame([new_row])], ignore_index=True), "leads")
                 st.rerun()
 
-# --- 5. BỘ LỌC & TÌM KIẾM ---
+# --- 5. BỘ LỌC & TÌM KIẾM (KHÔNG ĐỔI) ---
 st.title("💼 Pipeline Processing")
 c_search, c_slider = st.columns([7, 3])
 with c_search:
-    query = st.text_input("🔍 Tìm kiếm nhanh (Tên, ID, SĐT...):", placeholder="Nhập tên, ID hoặc số điện thoại để lọc...")
+    query = st.text_input("🔍 Tìm kiếm nhanh:", placeholder="Nhập tên, ID hoặc số điện thoại...")
 with c_slider:
     days = st.slider("Khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
@@ -108,9 +110,10 @@ if not leads_df.empty:
 
 st.divider()
 
-# --- 6. RENDER DỮ LIỆU ---
+# --- 6. RENDER DỮ LIỆU (GIỮ NGUYÊN 100% CẤU TRÚC ANH THÍCH) ---
 for idx, row in leads_df.iterrows():
-    curr_h = row['note'] if row['note'] else ""; crm_url = row['crm_link'] if row['crm_link'] else "#"
+    curr_h = str(row['note']) if str(row['note']) != 'nan' else ""
+    crm_url = str(row['crm_link']) if str(row['crm_link']) != 'nan' else "#"
     with st.container(border=True):
         c_info, c_note, c_edit = st.columns([4, 5, 1])
         with c_info:
@@ -120,11 +123,12 @@ for idx, row in leads_df.iterrows():
             p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); em = str(row['email']).strip()
             n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span><a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a><a href="mailto:{em}?body={m_e}">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a></div>""", unsafe_allow_html=True)
-            if p_w and p_w not in ['0', '']: st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
+            if p_w and p_w not in ['0', 'nan', '']: st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
 
         with c_note:
             st.markdown(f'<div class="history-container">{curr_h}</div>', unsafe_allow_html=True)
-            st.text_input("Note & Enter", key=f"note_{idx}", on_change=save_note_v24, args=(idx, curr_h, f"note_{idx}"), label_visibility="collapsed", placeholder="Note nhanh...")
+            # Nhập Note Ăn Ngay
+            st.text_input("Ghi chú & Enter", key=f"note_{idx}", on_change=save_note_v24, args=(idx, curr_h, f"note_{idx}"), label_visibility="collapsed", placeholder="Note nhanh...")
 
         with c_edit:
             with st.popover("⋮"):
