@@ -6,12 +6,13 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V31.8", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V31.9", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
     try:
-        return conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0).dropna(how='all')
+        df = conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0)
+        return df.dropna(how='all') if df is not None else pd.DataFrame()
     except:
         return pd.DataFrame()
 
@@ -20,7 +21,7 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CSS GIAO DIỆN ---
+# --- 2. CSS GIAO DIỆN CHUẨN ---
 st.markdown("""
     <style>
     .history-container {
@@ -62,36 +63,34 @@ def save_note_v31(idx, current_note, note_key):
         save_data(df, "leads")
         st.session_state[note_key] = ""; st.rerun()
 
-# --- 5. SIDEBAR (KHÔNG LỖI NONETYPE) ---
+# --- 5. SIDEBAR (KHÔNG LỖI) ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
     
-    # Quick Links
     with st.expander("🔗 Danh sách Quick Links"):
-        if not df_links.empty:
+        if not df_links.empty and 'category' in df_links.columns:
             list_links = df_links[df_links['category'] == 'Quick Link']
             if not list_links.empty:
                 sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_links['title'].tolist(), key="sb_l")
                 if sel_l != "-- Chọn --":
                     st.markdown(f"🚀 [Mở ngay]({list_links[list_links['title'] == sel_l]['url'].values[0]})")
     
-    # Sales Kit
     with st.expander("📁 Danh sách Sales Kit"):
-        if not df_links.empty:
+        if not df_links.empty and 'category' in df_links.columns:
             list_sk = df_links[df_links['category'] == 'Sales Kit']
             if not list_sk.empty:
                 sel_sk = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_sk['title'].tolist(), key="sb_sk")
                 if sel_sk != "-- Chọn --":
                     st.markdown(f"📂 [Xem]({list_sk[list_sk['title'] == sel_sk]['url'].values[0]})")
 
-    # Add Link/Lead (Giữ nguyên form của anh)
     with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("f_link"):
             c=st.selectbox("Loại",["Quick Link","Sales Kit"]); t=st.text_input("Tiêu đề"); u=st.text_input("URL")
             if st.form_submit_button("Lưu"):
                 save_data(pd.concat([df_links, pd.DataFrame([{"category":c,"title":t,"url":u}])], ignore_index=True), "links"); st.rerun()
     
+    st.divider()
     with st.expander("➕ Thêm Khách Hàng Mới"):
         with st.form("f_lead"):
             n=st.text_input("Họ tên"); i=st.text_input("ID"); c_p=st.text_input("Cellphone"); w_p=st.text_input("Workphone")
