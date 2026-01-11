@@ -6,14 +6,13 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V35", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V35.1", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
     try:
         df = conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0)
         if df is not None:
-            # Ép tất cả thành string và xử lý triệt để đuôi .0 ngay khi load
             df = df.fillna("").astype(str)
             for col in df.columns:
                 df[col] = df[col].apply(lambda x: x[:-2] if x.endswith('.0') else x)
@@ -26,9 +25,8 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df.fillna(""))
     st.cache_data.clear()
 
-# --- 2. HÀM HỖ TRỢ (TÌM KIẾM THÔNG MINH) ---
+# --- 2. HÀM HỖ TRỢ ---
 def clean_phone_to_int(phone_str):
-    # Chỉ giữ lại các chữ số để so sánh tìm kiếm
     return re.sub(r'\D', '', str(phone_str))
 
 def clean_html_for_edit(raw_html):
@@ -46,13 +44,14 @@ st.markdown("""
         padding: 12px; height: 160px; overflow-y: auto; font-size: 13px; color: #495057;
     }
     .history-entry { border-bottom: 1px solid #dee2e6; margin-bottom: 8px; padding-bottom: 4px; }
-    .contact-link { text-decoration: none; color: #28a745; font-weight: bold; }
+    .contact-link { text-decoration: none; color: #28a745; font-weight: bold; font-size: 18px; }
     .id-badge {
         background-color: #fce4ec; color: #d81b60; padding: 2px 8px;
         border-radius: 12px; font-weight: bold; font-size: 13px; text-decoration: none;
         border: 1px solid #f8bbd0; margin-left: 10px;
     }
-    .owner-tag { color: #6c757d; font-size: 12px; font-style: italic; }
+    .owner-tag { color: #6c757d; font-size: 12px; font-style: italic; display: block; margin-bottom: 5px; }
+    .icon-gap { display: flex; align-items: center; gap: 15px; margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -70,12 +69,10 @@ with st.sidebar:
                 if c2.button("🗑️", key=f"del_ql_{idx}"):
                     st.session_state[f"conf_ql_{idx}"] = True
                 if st.session_state.get(f"conf_ql_{idx}"):
-                    st.warning("Xóa?")
                     ok, no = st.columns(2)
                     if ok.button("Xóa", key=f"re_ql_{idx}", type="primary"):
                         save_data(df_links.drop(idx), "links"); del st.session_state[f"conf_ql_{idx}"]; st.rerun()
-                    if no.button("Hủy", key=f"can_ql_{idx}"):
-                        del st.session_state[f"conf_ql_{idx}"]; st.rerun()
+                    if no.button("Hủy", key=f"can_ql_{idx}"): del st.session_state[f"conf_ql_{idx}"]; st.rerun()
 
     with st.expander("📁 Sales Kit"):
         if not df_links.empty:
@@ -117,15 +114,13 @@ leads_df = load_data("leads")
 c_sch, c_sld = st.columns([7, 3])
 search_raw = c_sch.text_input("🔍 Tìm Tên, ID, SĐT (nhập số liền nhau vẫn ra)...", key="search_main")
 q = str(search_raw).lower().strip()
-q_numeric = clean_phone_to_int(q) # Chuỗi số để tìm kiếm thông minh
+q_numeric = clean_phone_to_int(q)
 days_limit = c_sld.slider("⏳ Không tương tác (ngày)", 0, 90, 90)
 
 if not leads_df.empty:
-    # Lọc tìm kiếm thông minh
     def smart_filter(r):
         name_match = q in str(r.get('name','')).lower()
         id_match = q in str(r.get('crm_id','')).lower()
-        # So sánh số điện thoại bằng cách loại bỏ các ký tự đặc biệt
         cell_clean = clean_phone_to_int(r.get('cell',''))
         work_clean = clean_phone_to_int(r.get('work',''))
         phone_match = (q_numeric != "" and (q_numeric in cell_clean or q_numeric in work_clean))
@@ -140,8 +135,17 @@ if not leads_df.empty:
                 st.markdown(f"<div style='display:flex;align-items:center;'><h4 style='margin:0;'>{row['name']}</h4><a href='{row['crm_link']}' target='_blank' class='id-badge'>🆔 {row['crm_id']}</a></div>", unsafe_allow_html=True)
                 st.markdown(f"<span class='owner-tag'>📍 State: {row.get('state','-')} | 👤 Owner: {row.get('owner','-')}</span>", unsafe_allow_html=True)
                 
-                cell = row['cell']; work = row['work']
-                st.markdown(f"<div style='margin-top:8px;display:flex;align-items:center;gap:10px;'>📱 Cell: <a href='tel:{cell}' class='contact-link'>{cell}</a><a href='rcmobile://sms?number={cell}'>💬</a><a href='mailto:{row['email']}'>📧</a></div>", unsafe_allow_html=True)
+                cell = row['cell']; work = row['work']; n_e = urllib.parse.quote(str(row['name']))
+                # KHU VỰC CÁC NÚT LIÊN LẠC (ĐÃ KHÔI PHỤC NÚT CALENDAR)
+                st.markdown(f"""
+                    <div class='icon-gap'>
+                        <span>📱 Cell: <a href='tel:{cell}' class='contact-link'>{cell}</a></span>
+                        <a href='rcmobile://sms?number={cell}' title='Gửi SMS'>💬</a>
+                        <a href='mailto:{row['email']}' title='Gửi Email'>📧</a>
+                        <a href='https://calendar.google.com/calendar/r/eventedit?text=Meeting_with_{n_e}' target='_blank' title='Hẹn lịch Google Calendar'>📅</a>
+                    </div>
+                """, unsafe_allow_html=True)
+                
                 if work: st.markdown(f"📞 Work: <a href='tel:{work}' class='contact-link'>{work}</a>", unsafe_allow_html=True)
                 st.caption(f"🏷️ Status: {row['status']}")
             
@@ -149,11 +153,10 @@ if not leads_df.empty:
                 note_h = str(row.get('note', ''))
                 st.markdown(f'<div class="history-container">{note_h}</div>', unsafe_allow_html=True)
                 n_input = st.text_input("Note nhanh...", key=f"n_{idx}", label_visibility="collapsed")
-                if n_input: # Logic lưu note nhanh
+                if n_input:
                     now_str = datetime.now().strftime("[%m/%d %H:%M]")
                     new_entry = f"<div class='history-entry'><span style='color:#007bff;font-weight:bold;'>{now_str}</span> {n_input}</div>"
-                    full_note = new_entry + note_h
-                    leads_df.at[idx, 'note'] = full_note
+                    leads_df.at[idx, 'note'] = new_entry + note_h
                     leads_df.at[idx, 'last_interact'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     save_data(leads_df, "leads"); st.rerun()
             
@@ -168,10 +171,9 @@ if not leads_df.empty:
                         if st.form_submit_button("Lưu"):
                             f=load_data("leads"); f.loc[idx,['name','crm_id','cell','work','email','crm_link','state','owner','status']]=[un,ui,uc,uw,uem,ul,ust,uow,us]
                             save_data(f,"leads"); st.rerun()
-                    if st.button("🗑️ Xóa", key=f"d_{idx}", type="primary"):
-                        st.session_state[f"c_del_{idx}"] = True
+                    if st.button("🗑️ Xóa", key=f"d_{idx}", type="primary"): st.session_state[f"c_del_{idx}"] = True
                     if st.session_state.get(f"c_del_{idx}"):
-                        st.error("Xóa khách này?")
+                        st.error("Xóa?")
                         ok, no = st.columns(2)
                         if ok.button("Vâng", key=f"ok_d_{idx}"):
                             f=load_data("leads"); save_data(f.drop(idx),"leads"); del st.session_state[f"c_del_{idx}"]; st.rerun()
