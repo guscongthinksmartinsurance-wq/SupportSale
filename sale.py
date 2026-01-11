@@ -6,7 +6,7 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V32.4", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V32.5", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -21,7 +21,7 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CSS GIAO DIỆN ---
+# --- 2. CSS GIAO DIỆN CHUẨN ---
 st.markdown("""
     <style>
     .history-container {
@@ -39,12 +39,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HÀM XỬ LÝ TEXT AN TOÀN ---
+# --- 3. HÀM XỬ LÝ AN TOÀN TUYỆT ĐỐI ---
 def safe_text(val):
     if val is None or pd.isna(val): return ""
+    # Ép kiểu string ngay từ đầu, xóa đuôi .0 của số phone nếu có
     s = str(val).strip()
-    if s.endswith('.0'): s = s[:-2]
-    return s
+    return s[:-2] if s.endswith('.0') else s
 
 def clean_html_for_edit(raw_html):
     t = safe_text(raw_html).replace('</div>', '\n')
@@ -90,7 +90,7 @@ with st.sidebar:
         with st.form("f_lead"):
             fn=st.text_input("Họ tên"); fi=st.text_input("CRM ID"); fc=st.text_input("Cell"); fw=st.text_input("Work")
             fe=st.text_input("Email"); fl=st.text_input("Link CRM"); fs=st.selectbox("Status",["New","Contacted","Following","Closed"])
-            if st.form_submit_button("Lưu Lead"):
+            if st.form_submit_button("Lưu"):
                 df_all = load_data("leads")
                 save_data(pd.concat([df_all, pd.DataFrame([{"name":fn,"crm_id":fi,"cell":fc,"work":fw,"email":fe,"crm_link":fl,"status":fs,"note":""}])], ignore_index=True), "leads"); st.rerun()
 
@@ -99,18 +99,16 @@ st.title("💼 Pipeline Processing")
 leads_df = load_data("leads")
 c1, c2 = st.columns([7, 3])
 
-# SỬA LỖI TÌM KIẾM TẠI ĐÂY
-search_input = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...", key="search_main")
-q = str(search_input).lower() if search_input else ""
-
+q = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...", key="search_main").lower().strip()
 days_f = c2.slider("⏳ Không tương tác", 0, 90, 90)
 
 if not leads_df.empty:
-    # Lọc tìm kiếm an toàn
-    filtered = leads_df[leads_df.apply(lambda r: q in safe_text(r.get('name','')).lower() or 
-                                               q in safe_text(r.get('crm_id','')).lower() or 
-                                               q in safe_text(r.get('cell','')).lower() or 
-                                               q in safe_text(r.get('work','')).lower(), axis=1)]
+    # LỌC TÌM KIẾM: Ép mọi giá trị về string để .lower() không bao giờ lỗi
+    filtered = leads_df[leads_df.apply(lambda r: 
+        q in safe_text(r.get('name','')).lower() or 
+        q in safe_text(r.get('crm_id','')).lower() or 
+        q in safe_text(r.get('cell','')).lower() or 
+        q in safe_text(r.get('work','')).lower(), axis=1)]
 
     for idx, row in filtered.iterrows():
         note_h = safe_text(row.get('note', ''))
