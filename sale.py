@@ -5,19 +5,20 @@ from datetime import datetime
 import urllib.parse
 
 # --- 1. CẤU HÌNH & KẾT NỐI ---
-st.set_page_config(page_title="TMC CRM CLOUD V26.1", layout="wide")
+st.set_page_config(page_title="TMC CRM CLOUD V26.2", layout="wide")
 
+# Kết nối Google Sheets chuyên dụng
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
-    # Đọc dữ liệu với ttl=0 để luôn lấy mới nhất
+    # ttl=0 để luôn lấy dữ liệu mới nhất từ Cloud
     return conn.read(spreadsheet=st.secrets["gsheet_url"], worksheet=worksheet, ttl=0)
 
 def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["gsheet_url"], worksheet=worksheet, data=df)
-    st.cache_data.clear() # Xóa cache để hiện Note ngay lập tức
+    st.cache_data.clear() # Quan trọng: Xóa cache để Note hiện ra ngay không cần F5
 
-# --- 2. GIAO DIỆN (CSS) ---
+# --- 2. GIAO DIỆN (CSS GỐC) ---
 st.markdown("""
     <style>
     .history-container {
@@ -30,11 +31,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SIDEBAR (QUẢN LÝ LINK & THÊM KHÁCH) ---
+# --- 3. SIDEBAR (GIỮ NGUYÊN BẢN GỐC) ---
 with st.sidebar:
     st.title("🛠️ TMC Cloud Tools")
     
-    # --- QUẢN LÝ LINKS ---
+    # --- QUẢN LÝ LINKS & VIDEO ---
     try:
         df_links = load_data("links")
     except:
@@ -72,7 +73,7 @@ with st.sidebar:
     
     st.divider()
     
-    # --- THÊM KHÁCH HÀNG MỚI ---
+    # --- THÊM KHÁCH HÀNG MỚI (GIỮ NGUYÊN CÁC TRƯỜNG DỮ LIỆU) ---
     with st.expander("➕ Add New Lead"):
         with st.form("new_lead", clear_on_submit=True):
             n = st.text_input("Name"); i = st.text_input("ID"); p = st.text_input("Cell")
@@ -87,7 +88,7 @@ with st.sidebar:
                 save_data(df_leads, "leads")
                 st.rerun()
 
-# --- 4. BỘ LỌC & TÌM KIẾM ---
+# --- 4. BỘ LỌC & TÌM KIẾM (GIỮ NGUYÊN SLIDER & SEARCH) ---
 st.title("💼 Pipeline Processing")
 
 c_search, c_slider = st.columns([7, 3])
@@ -97,13 +98,13 @@ with c_search:
 with c_slider:
     days_limit = st.slider("Khách chưa đụng tới quá (ngày):", 0, 90, 0)
 
-# Load dữ liệu khách hàng
+# Load dữ liệu chính
 try:
     df_leads = load_data("leads")
 except:
     df_leads = pd.DataFrame(columns=["name", "crm_id", "cell", "work", "email", "state", "status", "last_interact", "note", "crm_link"])
 
-# Xử lý lọc
+# Xử lý Logic Lọc
 if not df_leads.empty:
     df_leads['last_interact'] = df_leads['last_interact'].fillna('')
     if days_limit > 0:
@@ -119,7 +120,7 @@ if not df_leads.empty:
 
 st.divider()
 
-# --- 5. RENDER DANH SÁCH ---
+# --- 5. RENDER DANH SÁCH (KHÔI PHỤC TOÀN BỘ ICON & NÚT BẤM) ---
 for idx, row in df_leads.iterrows():
     curr_h = str(row['note']) if str(row['note']) != 'nan' else ""
     crm_url = row['crm_link'] if str(row['crm_link']) != 'nan' else "#"
@@ -130,18 +131,19 @@ for idx, row in df_leads.iterrows():
         with c_info:
             st.markdown(f"#### {row['name']}")
             rid = str(row['crm_id']).strip()
-            # Nút ID & Copy
+            # Badge ID & Link CRM
             st.markdown(f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="background:#7d3c98;color:white;padding:1px 4px;border-radius:3px;font-size:10px;">ID</span><a href="{crm_url}" target="_blank" style="color:#e83e8c;text-decoration:none;font-weight:bold;background:#fef1f6;padding:2px 6px;border-radius:4px;border:1px solid #fce4ec;">🔗 {rid}</a></div>""", unsafe_allow_html=True)
             
-            # RingCentral & Tools
+            # Icons: RingCentral, SMS, Email, Calendar
             p_c = str(row['cell']).strip(); p_w = str(row['work']).strip(); em = str(row['email']).strip()
             n_e = urllib.parse.quote(str(row['name'])); m_e = urllib.parse.quote(f"Chao {row['name']}...")
             st.markdown(f"""<div style="display:flex;gap:15px;align-items:center;"><span>📱 <a href="tel:{p_c}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_c}</a></span><a href="rcmobile://sms?number={p_c}&body={m_e}">💬</a><a href="mailto:{em}?body={m_e}">📧</a><a href="https://calendar.google.com/calendar/r/eventedit?text=TMC_{n_e}" target="_blank">📅</a></div>""", unsafe_allow_html=True)
             if p_w and p_w not in ['0', 'nan', '']: st.markdown(f'📞 Work: <a href="tel:{p_w}" style="color:#28a745;font-weight:bold;text-decoration:none;">{p_w}</a>', unsafe_allow_html=True)
 
         with c_note:
+            # History Box
             st.markdown(f'<div class="history-container">{curr_h}</div>', unsafe_allow_html=True)
-            # Nhập Note
+            # Ô nhập Note nhanh
             n_key = f"note_in_{idx}"
             new_txt = st.text_input("Ghi chú & Enter", key=n_key, placeholder="Note nhanh...", label_visibility="collapsed")
             if new_txt:
@@ -153,15 +155,17 @@ for idx, row in df_leads.iterrows():
                 st.rerun()
 
         with c_edit:
+            # Popover chỉnh sửa (Khôi phục toàn bộ trường)
             with st.popover("⋮"):
                 en = st.text_input("Name", value=row['name'], key=f"en_{idx}")
                 ei = st.text_input("ID", value=row['crm_id'], key=f"ei_{idx}")
                 ec = st.text_input("Cell", value=row['cell'], key=f"ec_{idx}")
                 ew = st.text_input("Work", value=row['work'], key=f"ew_{idx}")
                 ee = st.text_input("Email", value=row['email'], key=f"ee_{idx}")
+                es = st.text_input("State", value=row['state'], key=f"es_{idx}")
                 el = st.text_input("Link CRM", value=row['crm_link'], key=f"el_{idx}")
                 if st.button("Save ✅", key=f"sv_{idx}", use_container_width=True):
-                    df_leads.loc[idx, ['name','crm_id','cell','work','email','crm_link']] = [en, ei, ec, ew, ee, el]
+                    df_leads.loc[idx, ['name','crm_id','cell','work','email','state','crm_link']] = [en, ei, ec, ew, ee, es, el]
                     save_data(df_leads, "leads")
                     st.rerun()
                 st.divider()
