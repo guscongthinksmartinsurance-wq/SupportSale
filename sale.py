@@ -6,7 +6,7 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V33", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V33.1", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -17,7 +17,8 @@ def load_data(worksheet):
         return pd.DataFrame()
 
 def save_data(df, worksheet):
-    conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
+    df_save = df.fillna("")
+    conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df_save)
     st.cache_data.clear()
 
 # --- 2. CSS GIAO DIỆN ---
@@ -34,11 +35,10 @@ st.markdown("""
         border-radius: 12px; font-weight: bold; font-size: 13px; text-decoration: none;
         border: 1px solid #f8bbd0; margin-left: 10px;
     }
-    .stVideo { border-radius: 8px; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HÀM XỬ LÝ ---
+# --- 3. HÀM XỬ LÝ HỆ THỐNG ---
 def format_phone(val):
     s = str(val).strip()
     return s[:-2] if s.endswith('.0') else s
@@ -48,9 +48,24 @@ def clean_html_for_edit(raw_html):
     return re.sub(r'<[^>]*>', '', t).strip()
 
 def is_youtube(url):
-    return "youtube.com" in url.lower() or "youtu.be" in url.lower()
+    return "youtube.com" in str(url).lower() or "youtu.be" in str(url).lower()
 
-# --- 4. SIDEBAR (SMART LINKS & SALES KIT) ---
+# KHÔI PHỤC HÀM LƯU NOTE NHANH (BỊ THIẾU Ở BẢN TRƯỚC)
+def save_note_v33(idx, current_note, note_key):
+    new_txt = st.session_state.get(note_key, "")
+    if new_txt and new_txt.strip():
+        now = datetime.now()
+        entry = f"<div class='history-entry'><span class='timestamp'>[{now.strftime('%m/%d %H:%M')}]</span>{new_txt}</div>"
+        combined = entry + str(current_note)
+        df = load_data("leads")
+        if not df.empty:
+            df.at[idx, 'note'] = combined
+            df.at[idx, 'last_interact'] = now.strftime("%Y-%m-%d %H:%M:%S")
+            save_data(df, "leads")
+            st.session_state[note_key] = "" 
+            st.rerun()
+
+# --- 4. SIDEBAR ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
@@ -60,19 +75,18 @@ with st.sidebar:
         if not df_links.empty:
             ql = df_links[df_links['category'] == 'Quick Link']
             for idx, row in ql.iterrows():
-                col1, col2 = st.columns([8, 2])
-                col1.markdown(f"🚀 [{row['title']}]({row['url']})")
-                if col2.button("🗑️", key=f"del_ql_{idx}"):
+                c1, c2 = st.columns([8, 2])
+                c1.markdown(f"🚀 [{row['title']}]({row['url']})")
+                if c2.button("🗑️", key=f"del_ql_{idx}"):
                     st.session_state[f"conf_ql_{idx}"] = True
-                
                 if st.session_state.get(f"conf_ql_{idx}"):
-                    st.error("Xóa link này?")
-                    if st.button("Xóa", key=f"re_ql_{idx}"):
-                        save_data(df_links.drop(idx), "links"); st.rerun()
-                    if st.button("Hủy", key=f"can_ql_{idx}"):
-                        del st.session_state[f"conf_ql_{idx}"]; st.rerun()
+                    if st.button("Xác nhận xóa", key=f"re_ql_{idx}", type="primary"):
+                        save_data(df_links.drop(idx), "links")
+                        del st.session_state[f"conf_ql_{idx}"]
+                        st.rerun()
+                    st.button("Hủy", key=f"can_ql_{idx}")
 
-    # 4.2 SALES KIT (Hiện Video nếu là Youtube)
+    # 4.2 SALES KIT (Nhúng Youtube)
     with st.expander("📁 Sales Kit"):
         if not df_links.empty:
             sk = df_links[df_links['category'] == 'Sales Kit']
@@ -82,18 +96,17 @@ with st.sidebar:
                     st.video(row['url'])
                 else:
                     st.markdown(f"🔗 [Mở tài liệu]({row['url']})")
-                
-                if st.button("🗑️ Xóa tài liệu", key=f"del_sk_{idx}"):
+                if st.button("🗑️ Xóa", key=f"del_sk_{idx}"):
                     st.session_state[f"conf_sk_{idx}"] = True
-                
                 if st.session_state.get(f"conf_sk_{idx}"):
-                    st.warning("Xóa tài liệu này?")
-                    if st.button("Xác nhận", key=f"re_sk_{idx}"):
-                        save_data(df_links.drop(idx), "links"); st.rerun()
+                    if st.button("Vâng, Xóa ngay", key=f"re_sk_{idx}", type="primary"):
+                        save_data(df_links.drop(idx), "links")
+                        del st.session_state[f"conf_sk_{idx}"]
+                        st.rerun()
                     st.button("Hủy", key=f"can_sk_{idx}")
                 st.divider()
 
-    # 4.3 ADD LINK & LEAD (Giữ nguyên)
+    # Form thêm Link
     with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("f_link"):
             c=st.selectbox("Loại",["Quick Link","Sales Kit"]); t=st.text_input("Tiêu đề"); u=st.text_input("URL")
@@ -101,6 +114,7 @@ with st.sidebar:
                 save_data(pd.concat([df_links, pd.DataFrame([{"category":c,"title":t,"url":u}])], ignore_index=True), "links"); st.rerun()
 
     st.divider()
+    # Form thêm khách hàng
     with st.expander("➕ Thêm Khách Hàng Mới"):
         with st.form("f_lead"):
             fn=st.text_input("Họ tên"); fi=st.text_input("CRM ID"); fc=st.text_input("Cell"); fw=st.text_input("Work")
@@ -112,10 +126,9 @@ with st.sidebar:
 # --- 5. PIPELINE ---
 st.title("💼 Pipeline Processing")
 leads_df = load_data("leads")
-c1, c2 = st.columns([7, 3])
-search_val = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...", key="search_main")
-q = str(search_val).lower().strip()
-days_f = c2.slider("⏳ Không tương tác", 0, 90, 90)
+c_sch, c_sld = st.columns([7, 3])
+q = str(c_sch.text_input("🔍 Tìm theo Tên, ID, SĐT...", key="search_main")).lower().strip()
+days_limit = c_sld.slider("⏳ Không tương tác", 0, 90, 90)
 
 if not leads_df.empty:
     filtered = leads_df[leads_df.apply(lambda r: q in r.get('name','').lower() or q in r.get('crm_id','').lower() or q in r.get('cell','').lower() or q in r.get('work','').lower(), axis=1)]
@@ -128,16 +141,18 @@ if not leads_df.empty:
         with st.container(border=True):
             ci, cn, ce = st.columns([4.5, 5, 0.5])
             with ci:
-                st.markdown(f"<div style='display:flex;align-items:center;'><h4 style='margin:0;'>{row.get('name','N/A')}</h4><a href='{row.get('crm_link','#')}' target='_blank' class='id-badge'>🆔 {row.get('crm_id','-')}</a></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='display:flex;align-items:center;'><h4 style='margin:0;'>{row.get('name','')}</h4><a href='{row.get('crm_link','#')}' target='_blank' class='id-badge'>🆔 {row.get('crm_id','')}</a></div>", unsafe_allow_html=True)
                 n_e = urllib.parse.quote(str(row.get('name','')))
                 st.markdown(f"<div style='margin-top:8px;display:flex;align-items:center;gap:10px;'>📱 Cell: <a href='tel:{cell}' class='contact-link'>{cell}</a><a href='rcmobile://sms?number={cell}'>💬</a><a href='mailto:{row.get('email','')}'>📧</a><a href='https://calendar.google.com/calendar/r/eventedit?text=Meeting_{n_e}' target='_blank'>📅</a></div>", unsafe_allow_html=True)
                 st.markdown(f"📞 Work: <a href='tel:{work}' class='contact-link'>{work}</a>", unsafe_allow_html=True)
                 st.caption(f"🏷️ Status: {row.get('status','New')}")
+            
             with cn:
                 st.markdown(f'<div class="history-container">{note_h}</div>', unsafe_allow_html=True)
-                cn1, cn2 = st.columns([8.5, 1.5])
-                with cn1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=lambda idx=idx, note_h=note_h: None, label_visibility="collapsed") # Logic Note cũ của anh
-                with cn2:
+                col_n1, col_n2 = st.columns([8.5, 1.5])
+                with col_n1:
+                    st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v33, args=(idx, note_h, f"n_{idx}"), label_visibility="collapsed")
+                with col_n2:
                     with st.popover("📝"):
                         cl_h = clean_html_for_edit(note_h)
                         new_h = st.text_area("Sửa lịch sử", value=cl_h, height=250)
@@ -145,6 +160,7 @@ if not leads_df.empty:
                             ls = new_h.split('\n')
                             f_h = "".join([f"<div class='history-entry'>{line}</div>" for line in ls if line.strip()])
                             f_df = load_data("leads"); f_df.at[idx, 'note'] = f_h; save_data(f_df, "leads"); st.rerun()
+            
             with ce:
                 with st.popover("⚙️"):
                     with st.form(f"ed_{idx}"):
@@ -158,7 +174,7 @@ if not leads_df.empty:
                     if st.button("🗑️ Xóa Lead", key=f"d_{idx}", type="primary"):
                         st.session_state[f"confirm_del_{idx}"] = True
                     if st.session_state.get(f"confirm_del_{idx}"):
-                        st.error("Xóa khách hàng này?")
+                        st.error("Xóa khách này?")
                         if st.button("Vâng, Xóa", key=f"re_d_{idx}"):
                             f=load_data("leads"); save_data(f.drop(idx),"leads"); del st.session_state[f"confirm_del_{idx}"]; st.rerun()
                         st.button("Hủy", key=f"can_d_{idx}")
