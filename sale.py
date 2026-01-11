@@ -5,7 +5,7 @@ from datetime import datetime
 import urllib.parse
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V29", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V30", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. LOGIC NOTE ---
-def save_note_v29(idx, current_note, note_key):
+def save_note_v30(idx, current_note, note_key):
     new_txt = st.session_state[note_key]
     if new_txt and new_txt.strip():
         now = datetime.now()
@@ -47,29 +47,37 @@ def save_note_v29(idx, current_note, note_key):
         save_data(df, "leads")
         st.session_state[note_key] = ""; st.rerun()
 
-# --- 4. SIDEBAR (KHÔI PHỤC TOÀN BỘ) ---
+# --- 4. SIDEBAR (EXPANDER DYNAMICS) ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
+    df_links = load_data("links")
     
-    # 4.1. Add Link trực tiếp
+    # 4.1. Quick Links (Nhấn vào mới hiện)
+    with st.expander("🔗 Danh sách Quick Links"):
+        list_links = df_links[df_links['category'] == 'Quick Link']
+        sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_links['title'].tolist(), key="sb_l")
+        if sel_l != "-- Chọn --":
+            u = list_links[list_links['title'] == sel_l]['url'].values[0]
+            st.markdown(f"🚀 [Mở ngay: {sel_l}]({u})")
+
+    # 4.2. Sales Kit (Nhấn vào mới hiện)
+    with st.expander("📁 Danh sách Sales Kit"):
+        list_sk = df_links[df_links['category'] == 'Sales Kit']
+        sel_sk = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_sk['title'].tolist(), key="sb_sk")
+        if sel_sk != "-- Chọn --":
+            u_sk = list_sk[list_sk['title'] == sel_sk]['url'].values[0]
+            st.markdown(f"📂 [Xem: {sel_sk}]({u_sk})")
+
+    # 4.3. Add Link/Sales Kit trực tiếp
     with st.expander("➕ Thêm Link / Sales Kit mới"):
         with st.form("form_add_link"):
             cat_l = st.selectbox("Loại", ["Quick Link", "Sales Kit"])
-            tit_l = st.text_input("Tiêu đề")
-            url_l = st.text_input("URL")
+            tit_l = st.text_input("Tiêu đề"); url_l = st.text_input("URL")
             if st.form_submit_button("Lưu Link"):
-                df_links_all = load_data("links")
-                save_data(pd.concat([df_links_all, pd.DataFrame([{"category":cat_l, "title":tit_l, "url":url_l}])], ignore_index=True), "links")
-                st.rerun()
-
-    # 4.2. Danh sách Selectbox
-    df_links = load_data("links")
-    for cat in ["Quick Link", "Sales Kit"]:
-        list_items = df_links[df_links['category'] == cat]
-        st.selectbox(f"📂 {cat}", ["-- Chọn --"] + list_items['title'].tolist(), key=f"sel_{cat}")
+                save_data(pd.concat([df_links, pd.DataFrame([{"category":cat_l, "title":tit_l, "url":url_l}])], ignore_index=True), "links"); st.rerun()
 
     st.divider()
-    # 4.3. Add Khách hàng mới (Full trường)
+    # 4.4. Add Khách hàng mới (Full 7 trường)
     with st.expander("➕ Thêm Khách Hàng Mới"):
         with st.form("form_add_lead"):
             f_n = st.text_input("Họ tên"); f_id = st.text_input("CRM ID")
@@ -77,10 +85,9 @@ with st.sidebar:
             f_e = st.text_input("Email"); f_l = st.text_input("Link CRM")
             f_s = st.selectbox("Status", ["New", "Contacted", "Following", "Closed"])
             if st.form_submit_button("Lưu Lead"):
-                df_leads_all = load_data("leads")
+                df_all = load_data("leads")
                 new_lead = {"name":f_n, "crm_id":f_id, "cell":f_c, "work":f_w, "email":f_e, "crm_link":f_l, "status":f_s, "note":""}
-                save_data(pd.concat([df_leads_all, pd.DataFrame([new_lead])], ignore_index=True), "leads")
-                st.rerun()
+                save_data(pd.concat([df_all, pd.DataFrame([new_lead])], ignore_index=True), "leads"); st.rerun()
 
 # --- 5. PIPELINE & BỘ LỌC ---
 st.title("💼 Pipeline Processing")
@@ -98,15 +105,14 @@ if not leads_df.empty:
         
         with st.container(border=True):
             ci, cn, ce = st.columns([4.5, 5, 0.5])
-            
             with ci:
-                # Tên + ID (Link CRM)
+                # Tên + ID (Gắn link CRM chuẩn)
                 st.markdown(f"""<div style='display:flex;align-items:center;'>
                     <h4 style='margin:0;'>{row['name']}</h4>
                     <a href='{row.get('crm_link','#')}' target='_blank' class='id-badge'>🆔 {row['crm_id']}</a>
                 </div>""", unsafe_allow_html=True)
                 
-                # Cell + Icons
+                # Cell + Icons (SMS, Mail, Calendar)
                 cell = str(row['cell']).strip()
                 n_e = urllib.parse.quote(str(row['name']))
                 st.markdown(f"""<div style='margin-top:8px;display:flex;align-items:center;gap:10px;'>
@@ -116,7 +122,7 @@ if not leads_df.empty:
                     <a href='https://calendar.google.com/calendar/r/eventedit?text=Meeting_{n_e}' target='_blank'>📅</a>
                 </div>""", unsafe_allow_html=True)
                 
-                # Work
+                # Workphone (Link gọi nhanh, KHÔNG thêm số 0)
                 work = str(row['work']).strip()
                 st.markdown(f"📞 Work: <a href='tel:{work}' class='contact-link'>{work}</a>", unsafe_allow_html=True)
                 st.caption(f"🏷️ Status: {row['status']}")
@@ -124,7 +130,7 @@ if not leads_df.empty:
             with cn:
                 st.markdown(f'<div class="history-container">{curr_h}</div>', unsafe_allow_html=True)
                 col_n1, col_n2 = st.columns([8.5, 1.5])
-                with col_n1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v29, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
+                with col_n1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v30, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
                 with col_n2:
                     with st.popover("📝"):
                         new_h = st.text_area("Sửa Note", value=curr_h, height=250)
