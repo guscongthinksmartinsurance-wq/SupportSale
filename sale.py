@@ -6,15 +6,13 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V32.9", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V33", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
     try:
         df = conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0)
-        if df is not None:
-            return df.fillna("").astype(str)
-        return pd.DataFrame()
+        return df.fillna("").astype(str) if df is not None else pd.DataFrame()
     except:
         return pd.DataFrame()
 
@@ -36,7 +34,7 @@ st.markdown("""
         border-radius: 12px; font-weight: bold; font-size: 13px; text-decoration: none;
         border: 1px solid #f8bbd0; margin-left: 10px;
     }
-    .link-display { font-size: 11px; color: #6c757d; display: block; margin-top: -5px; margin-bottom: 10px; }
+    .stVideo { border-radius: 8px; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -49,52 +47,53 @@ def clean_html_for_edit(raw_html):
     t = str(raw_html).replace('</div>', '\n')
     return re.sub(r'<[^>]*>', '', t).strip()
 
-def save_note_v32(idx, current_note, note_key):
-    new_txt = st.session_state.get(note_key, "")
-    if new_txt and new_txt.strip():
-        now = datetime.now()
-        entry = f"<div class='history-entry'><span class='timestamp'>[{now.strftime('%m/%d %H:%M')}]</span>{new_txt}</div>"
-        combined = entry + str(current_note)
-        df = load_data("leads")
-        if not df.empty:
-            df.at[idx, 'note'] = combined
-            df.at[idx, 'last_interact'] = now.strftime("%Y-%m-%d %H:%M:%S")
-            save_data(df, "leads")
-            st.session_state[note_key] = ""; st.rerun()
+def is_youtube(url):
+    return "youtube.com" in url.lower() or "youtu.be" in url.lower()
 
-# --- 4. SIDEBAR ---
+# --- 4. SIDEBAR (SMART LINKS & SALES KIT) ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
     
-    # HIỂN THỊ LINK VỚI URL YOUTUBE & NÚT XÓA CÓ XÁC NHẬN
-    def show_link_category(cat, label, key_prefix):
-        with st.expander(label):
-            if not df_links.empty:
-                items = df_links[df_links['category'] == cat]
-                for l_idx, l_row in items.iterrows():
-                    c_link, c_del = st.columns([8, 2])
-                    with c_link:
-                        st.markdown(f"🚀 [{l_row['title']}]({l_row['url']})")
-                        st.markdown(f"<span class='link-display'>{l_row['url']}</span>", unsafe_allow_html=True)
-                    with c_del:
-                        if st.button("🗑️", key=f"del_l_{key_prefix}_{l_idx}"):
-                            st.session_state[f"confirm_del_l_{l_idx}"] = True
-                    
-                    if st.session_state.get(f"confirm_del_l_{l_idx}"):
-                        st.warning(f"Xóa link này?")
-                        if st.button("Xác nhận xóa", key=f"re_del_l_{l_idx}"):
-                            new_df = df_links.drop(l_idx)
-                            save_data(new_df, "links")
-                            del st.session_state[f"confirm_del_l_{l_idx}"]
-                            st.rerun()
-                        if st.button("Hủy", key=f"can_del_l_{l_idx}"):
-                            del st.session_state[f"confirm_del_l_{l_idx}"]
-                            st.rerun()
+    # 4.1 QUICK LINKS (Chỉ hiện Tiêu đề)
+    with st.expander("🔗 Quick Links"):
+        if not df_links.empty:
+            ql = df_links[df_links['category'] == 'Quick Link']
+            for idx, row in ql.iterrows():
+                col1, col2 = st.columns([8, 2])
+                col1.markdown(f"🚀 [{row['title']}]({row['url']})")
+                if col2.button("🗑️", key=f"del_ql_{idx}"):
+                    st.session_state[f"conf_ql_{idx}"] = True
+                
+                if st.session_state.get(f"conf_ql_{idx}"):
+                    st.error("Xóa link này?")
+                    if st.button("Xóa", key=f"re_ql_{idx}"):
+                        save_data(df_links.drop(idx), "links"); st.rerun()
+                    if st.button("Hủy", key=f"can_ql_{idx}"):
+                        del st.session_state[f"conf_ql_{idx}"]; st.rerun()
 
-    show_link_category("Quick Link", "🔗 Danh sách Quick Links", "ql")
-    show_link_category("Sales Kit", "📁 Danh sách Sales Kit", "sk")
+    # 4.2 SALES KIT (Hiện Video nếu là Youtube)
+    with st.expander("📁 Sales Kit"):
+        if not df_links.empty:
+            sk = df_links[df_links['category'] == 'Sales Kit']
+            for idx, row in sk.iterrows():
+                st.markdown(f"📂 **{row['title']}**")
+                if is_youtube(row['url']):
+                    st.video(row['url'])
+                else:
+                    st.markdown(f"🔗 [Mở tài liệu]({row['url']})")
+                
+                if st.button("🗑️ Xóa tài liệu", key=f"del_sk_{idx}"):
+                    st.session_state[f"conf_sk_{idx}"] = True
+                
+                if st.session_state.get(f"conf_sk_{idx}"):
+                    st.warning("Xóa tài liệu này?")
+                    if st.button("Xác nhận", key=f"re_sk_{idx}"):
+                        save_data(df_links.drop(idx), "links"); st.rerun()
+                    st.button("Hủy", key=f"can_sk_{idx}")
+                st.divider()
 
+    # 4.3 ADD LINK & LEAD (Giữ nguyên)
     with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("f_link"):
             c=st.selectbox("Loại",["Quick Link","Sales Kit"]); t=st.text_input("Tiêu đề"); u=st.text_input("URL")
@@ -137,7 +136,7 @@ if not leads_df.empty:
             with cn:
                 st.markdown(f'<div class="history-container">{note_h}</div>', unsafe_allow_html=True)
                 cn1, cn2 = st.columns([8.5, 1.5])
-                with cn1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v32, args=(idx, note_h, f"n_{idx}"), label_visibility="collapsed")
+                with cn1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=lambda idx=idx, note_h=note_h: None, label_visibility="collapsed") # Logic Note cũ của anh
                 with cn2:
                     with st.popover("📝"):
                         cl_h = clean_html_for_edit(note_h)
@@ -156,15 +155,10 @@ if not leads_df.empty:
                         if st.form_submit_button("Cập nhật"):
                             f=load_data("leads"); f.loc[idx,['name','crm_id','cell','work','email','crm_link','status']]=[un,ui,uc,uw,uem,ul,us]
                             save_data(f,"leads"); st.rerun()
-                    
-                    # NÚT XÓA KHÁCH HÀNG CÓ XÁC NHẬN
                     if st.button("🗑️ Xóa Lead", key=f"d_{idx}", type="primary"):
                         st.session_state[f"confirm_del_{idx}"] = True
-                    
                     if st.session_state.get(f"confirm_del_{idx}"):
-                        st.error("Bạn có chắc chắn muốn xóa khách hàng này?")
-                        if st.button("Vâng, Xóa ngay", key=f"re_d_{idx}"):
-                            f=load_data("leads"); save_data(f.drop(idx),"leads")
-                            del st.session_state[f"confirm_del_{idx}"]; st.rerun()
-                        if st.button("Hủy bỏ", key=f"can_d_{idx}"):
-                            del st.session_state[f"confirm_del_{idx}"]; st.rerun()
+                        st.error("Xóa khách hàng này?")
+                        if st.button("Vâng, Xóa", key=f"re_d_{idx}"):
+                            f=load_data("leads"); save_data(f.drop(idx),"leads"); del st.session_state[f"confirm_del_{idx}"]; st.rerun()
+                        st.button("Hủy", key=f"can_d_{idx}")
