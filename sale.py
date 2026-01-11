@@ -6,7 +6,7 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V32.1", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V32.2", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -21,7 +21,7 @@ def save_data(df, worksheet):
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CSS GIAO DIỆN ---
+# --- 2. CSS GIAO DIỆN CHUẨN ---
 st.markdown("""
     <style>
     .history-container {
@@ -39,16 +39,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC XỬ LÝ TEXT AN TOÀN ---
+# --- 3. HÀM XỬ LÝ AN TOÀN (CHỐNG LỖI TRỐNG/FLOAT) ---
 def safe_str(val):
     if pd.isna(val) or val is None: return ""
-    return str(val).replace('.0', '').strip()
+    # Chuyển về string và xử lý đuôi .0 của số phone
+    s = str(val).strip()
+    if s.endswith('.0'): s = s[:-2]
+    return s
 
 def clean_html_for_edit(raw_html):
     text = safe_str(raw_html).replace('</div>', '\n')
-    return re.sub(re.compile('<.*?>'), '', text).strip()
+    cleanr = re.compile('<.*?>')
+    return re.sub(cleanr, '', text).strip()
 
-# --- 4. LOGIC LƯU NOTE ---
+# --- 4. LOGIC LƯU NOTE NHANH ---
 def save_note_v32(idx, current_note, note_key):
     new_txt = st.session_state[note_key]
     if new_txt and new_txt.strip():
@@ -62,7 +66,7 @@ def save_note_v32(idx, current_note, note_key):
             save_data(df, "leads")
             st.session_state[note_key] = ""; st.rerun()
 
-# --- 5. SIDEBAR ---
+# --- 5. SIDEBAR (CHỐT CHẶN AN TOÀN) ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
@@ -70,16 +74,18 @@ with st.sidebar:
     with st.expander("🔗 Danh sách Quick Links"):
         if not df_links.empty and 'category' in df_links.columns:
             list_l = df_links[df_links['category'] == 'Quick Link']
-            sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_l['title'].tolist(), key="sb_l")
-            if sel_l != "-- Chọn --":
-                st.markdown(f"🚀 [Mở ngay]({list_l[list_l['title'] == sel_l]['url'].values[0]})")
+            if not list_l.empty:
+                sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_l['title'].tolist(), key="sb_l")
+                if sel_l != "-- Chọn --":
+                    st.markdown(f"🚀 [Mở ngay]({list_l[list_l['title'] == sel_l]['url'].values[0]})")
     
     with st.expander("📁 Danh sách Sales Kit"):
         if not df_links.empty and 'category' in df_links.columns:
             list_s = df_links[df_links['category'] == 'Sales Kit']
-            sel_s = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_s['title'].tolist(), key="sb_s")
-            if sel_s != "-- Chọn --":
-                st.markdown(f"📂 [Xem]({list_s[list_s['title'] == sel_s]['url'].values[0]})")
+            if not list_s.empty:
+                sel_s = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_s['title'].tolist(), key="sb_s")
+                if sel_s != "-- Chọn --":
+                    st.markdown(f"📂 [Xem]({list_s[list_s['title'] == sel_s]['url'].values[0]})")
 
     with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("f_link"):
@@ -89,11 +95,11 @@ with st.sidebar:
     st.divider()
     with st.expander("➕ Thêm Khách Hàng Mới"):
         with st.form("f_lead"):
-            n=st.text_input("Họ tên"); i=st.text_input("CRM ID"); c_p=st.text_input("Cellphone"); w_p=st.text_input("Workphone")
-            em=st.text_input("Email"); l_c=st.text_input("Link CRM"); s_t=st.selectbox("Status",["New","Contacted","Following","Closed"])
+            fn=st.text_input("Họ tên"); fi=st.text_input("CRM ID"); fc=st.text_input("Cell"); fw=st.text_input("Work")
+            fe=st.text_input("Email"); fl=st.text_input("Link CRM"); fs=st.selectbox("Status",["New","Contacted","Following","Closed"])
             if st.form_submit_button("Lưu Lead"):
                 df_leads_all = load_data("leads")
-                save_data(pd.concat([df_leads_all, pd.DataFrame([{"name":n,"crm_id":i,"cell":c_p,"work":w_p,"email":em,"crm_link":l_c,"status":s_t,"note":""}])], ignore_index=True), "leads"); st.rerun()
+                save_data(pd.concat([df_leads_all, pd.DataFrame([{"name":fn,"crm_id":fi,"cell":fc,"work":fw,"email":fe,"crm_link":fl,"status":fs,"note":""}])], ignore_index=True), "leads"); st.rerun()
 
 # --- 6. PIPELINE ---
 st.title("💼 Pipeline Processing")
@@ -103,7 +109,7 @@ q = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...").lower()
 days_f = c2.slider("⏳ Không tương tác", 0, 90, 90)
 
 if not leads_df.empty:
-    # Logic tìm kiếm an toàn: Bất kể ô nào trống cũng không lỗi
+    # LỌC TÌM KIẾM AN TOÀN TUYỆT ĐỐI
     filtered = leads_df[leads_df.apply(lambda r: q in safe_str(r.get('name','')).lower() or 
                                                q in safe_str(r.get('crm_id','')).lower() or 
                                                q in safe_str(r.get('cell','')).lower() or 
@@ -145,4 +151,4 @@ if not leads_df.empty:
                             save_data(f,"leads"); st.rerun()
                     if st.button("🗑️ Xóa", key=f"d_{idx}", type="primary"):
                         f=load_data("leads"); save_data(f.drop(idx),"leads"); st.rerun()
-else: st.info("Hệ thống đang trống hoặc đang tải dữ liệu...")
+else: st.info("Hệ thống đang tải hoặc trống...")
