@@ -6,7 +6,7 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V31", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V31.5", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -35,14 +35,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC LỌC HTML CHO PHẦN SỬA NOTE ---
-def clean_html(raw_html):
-    # Xóa các thẻ div, span để lấy text thuần cho ô Sửa Note
+# --- 3. LOGIC LÀM SẠCH NOTE (CÓ XUỐNG DÒNG) ---
+def clean_html_for_edit(raw_html):
+    if not raw_html or str(raw_html) == 'nan':
+        return ""
+    # Thay thế các thẻ đóng div bằng dấu xuống dòng để không bị dính chùm
+    text = str(raw_html).replace('</div>', '\n')
+    # Xóa tất cả các thẻ HTML còn lại
     cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', str(raw_html))
-    return cleantext
+    cleantext = re.sub(cleanr, '', text)
+    # Loại bỏ khoảng trắng thừa ở đầu/cuối
+    return cleantext.strip()
 
-# --- 4. LOGIC LƯU NOTE ---
+# --- 4. LOGIC LƯU NOTE NHANH ---
 def save_note_v31(idx, current_note, note_key):
     new_txt = st.session_state[note_key]
     if new_txt and new_txt.strip():
@@ -55,7 +60,7 @@ def save_note_v31(idx, current_note, note_key):
         save_data(df, "leads")
         st.session_state[note_key] = ""; st.rerun()
 
-# --- 5. SIDEBAR (GIỮ NGUYÊN 100% THEO Ý ANH) ---
+# --- 5. SIDEBAR (GIỮ NGUYÊN THEO Ý ANH) ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
@@ -95,7 +100,6 @@ if not leads_df.empty:
 
     for idx, row in filtered.iterrows():
         curr_h = str(row['note']) if str(row['note']) != 'nan' else ""
-        # FIX TRIỆT ĐỂ WORKPHONE: Ép kiểu string và xóa phần .0 nếu có
         work = str(row['work']).replace('.0', '').strip() if str(row['work']) != 'nan' else ""
         cell = str(row['cell']).replace('.0', '').strip() if str(row['cell']) != 'nan' else ""
         
@@ -114,12 +118,13 @@ if not leads_df.empty:
                 with col_n1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v31, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
                 with col_n2:
                     with st.popover("📝"):
-                        # FIX NOTE: Làm sạch HTML trước khi cho vào ô sửa
-                        clean_history = clean_html(curr_h)
-                        new_h = st.text_area("Sửa lịch sử (Text thuần)", value=clean_history, height=250)
-                        if st.button("Cập nhật Note", key=f"sn_{idx}"):
-                            # Khi lưu lại, ta bao bọc lại bằng thẻ div để hiển thị đúng định dạng cũ
-                            formatted_h = f"<div class='history-entry'>{new_h}</div>"
+                        # NỘI DUNG ĐÃ ĐƯỢC XUỐNG DÒNG RÕ RÀNG
+                        clean_history = clean_html_for_edit(curr_h)
+                        new_h = st.text_area("Sửa lịch sử (Xuống dòng chuẩn)", value=clean_history, height=250)
+                        if st.button("Lưu lại", key=f"sn_{idx}"):
+                            # Chuyển đổi các dòng text thành HTML để hiển thị đẹp bên ngoài
+                            lines = new_h.split('\n')
+                            formatted_h = "".join([f"<div class='history-entry'>{line}</div>" for line in lines if line.strip()])
                             f_df = load_data("leads"); f_df.at[idx, 'note'] = formatted_h; save_data(f_df, "leads"); st.rerun()
 
             with ce:
