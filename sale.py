@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
-from datetime import datetime
+from datetime import datetime, timedelta
 import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V32.6", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V32.7", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
@@ -39,10 +39,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HÀM XỬ LÝ AN TOÀN (BẮT BUỘC RA CHỮ) ---
+# --- 3. HÀM XỬ LÝ AN TOÀN ---
 def safe_text(val):
     if pd.isna(val) or val is None: return ""
-    # Ép kiểu string và xử lý đuôi .0 của số
     s = str(val).strip()
     return s[:-2] if s.endswith('.0') else s
 
@@ -64,33 +63,27 @@ def save_note_v32(idx, current_note, note_key):
             save_data(df, "leads")
             st.session_state[note_key] = ""; st.rerun()
 
-# --- 5. SIDEBAR (CHỐT CHẶN AN TOÀN) ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
-    
     with st.expander("🔗 Danh sách Quick Links"):
         if not df_links.empty and 'category' in df_links.columns:
             l_list = df_links[df_links['category'] == 'Quick Link']
-            if not l_list.empty:
-                sel = st.selectbox("Chọn Link:", ["-- Chọn --"] + l_list['title'].tolist(), key="sb_l")
-                if sel != "-- Chọn --":
-                    st.markdown(f"🚀 [Mở ngay]({l_list[l_list['title'] == sel]['url'].values[0]})")
-    
+            sel = st.selectbox("Chọn Link:", ["-- Chọn --"] + l_list['title'].tolist(), key="sb_l")
+            if sel != "-- Chọn --":
+                st.markdown(f"🚀 [Mở ngay]({l_list[l_list['title'] == sel]['url'].values[0]})")
     with st.expander("📁 Danh sách Sales Kit"):
         if not df_links.empty and 'category' in df_links.columns:
             s_list = df_links[df_links['category'] == 'Sales Kit']
-            if not s_list.empty:
-                sel_s = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + s_list['title'].tolist(), key="sb_sk")
-                if sel_s != "-- Chọn --":
-                    st.markdown(f"📂 [Xem]({s_list[s_list['title'] == sel_s]['url'].values[0]})")
-
+            sel_s = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + s_list['title'].tolist(), key="sb_sk")
+            if sel_s != "-- Chọn --":
+                st.markdown(f"📂 [Xem]({s_list[s_list['title'] == sel_s]['url'].values[0]})")
     with st.expander("➕ Thêm Link / Sales Kit"):
         with st.form("f_link"):
             c=st.selectbox("Loại",["Quick Link","Sales Kit"]); t=st.text_input("Tiêu đề"); u=st.text_input("URL")
             if st.form_submit_button("Lưu"):
                 save_data(pd.concat([df_links, pd.DataFrame([{"category":c,"title":t,"url":u}])], ignore_index=True), "links"); st.rerun()
-
     st.divider()
     with st.expander("➕ Thêm Khách Hàng Mới"):
         with st.form("f_lead"):
@@ -106,21 +99,30 @@ leads_df = load_data("leads")
 c1, c2 = st.columns([7, 3])
 
 q = str(c1.text_input("🔍 Tìm theo Tên, ID, SĐT...", key="search_main")).lower().strip()
-days_f = c2.slider("⏳ Không tương tác", 0, 90, 90)
+days_limit = c2.slider("⏳ Không tương tác (ngày)", 0, 90, 90)
 
 if not leads_df.empty:
-    # LỌC TÌM KIẾM: Ép mọi giá trị thành string để so sánh, không lo lỗi AttributeError
+    # 6.1 Lọc theo số ngày không tương tác (Slider)
+    if 'last_interact' in leads_df.columns:
+        now = datetime.now()
+        def check_date(date_str):
+            try:
+                dt = datetime.strptime(str(date_str), "%Y-%m-%d %H:%M:%S")
+                return (now - dt).days <= days_limit
+            except: return True # Nếu chưa có ngày thì cho hiện
+        leads_df = leads_df[leads_df['last_interact'].apply(check_date)]
+
+    # 6.2 Lọc theo từ khóa tìm kiếm (An toàn tuyệt đối)
     filtered = leads_df[leads_df.apply(lambda r: 
-        q in safe_text(r.get('name','')).lower() or 
-        q in safe_text(r.get('crm_id','')).lower() or 
-        q in safe_text(r.get('cell','')).lower() or 
-        q in safe_text(r.get('work','')).lower(), axis=1)]
+        q in str(r.get('name','')).lower() or 
+        q in str(r.get('crm_id','')).lower() or 
+        q in str(r.get('cell','')).lower() or 
+        q in str(r.get('work','')).lower(), axis=1)]
 
     for idx, row in filtered.iterrows():
         note_h = safe_text(row.get('note', ''))
         cell = safe_text(row.get('cell', ''))
         work = safe_text(row.get('work', ''))
-        
         with st.container(border=True):
             ci, cn, ce = st.columns([4.5, 5, 0.5])
             with ci:
