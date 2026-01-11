@@ -6,18 +6,21 @@ import urllib.parse
 import re
 
 # --- 1. KẾT NỐI DATABASE ---
-st.set_page_config(page_title="TMC CRM PRO V31.7", layout="wide")
+st.set_page_config(page_title="TMC CRM PRO V31.8", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
-    return conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0).dropna(how='all')
+    try:
+        return conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0).dropna(how='all')
+    except:
+        return pd.DataFrame()
 
 def save_data(df, worksheet):
     df = df.fillna("")
     conn.update(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, data=df)
     st.cache_data.clear()
 
-# --- 2. CSS GIAO DIỆN CHUẨN ---
+# --- 2. CSS GIAO DIỆN ---
 st.markdown("""
     <style>
     .history-container {
@@ -35,7 +38,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC XỬ LÝ TEXT & NOTE ---
+# --- 3. LOGIC XỬ LÝ TEXT ---
 def clean_html_for_edit(raw_html):
     if not raw_html or str(raw_html) == 'nan': return ""
     text = str(raw_html).replace('</div>', '\n')
@@ -59,47 +62,56 @@ def save_note_v31(idx, current_note, note_key):
         save_data(df, "leads")
         st.session_state[note_key] = ""; st.rerun()
 
-# --- 5. SIDEBAR (GIỮ NGUYÊN THEO Ý ANH) ---
+# --- 5. SIDEBAR (KHÔNG LỖI NONETYPE) ---
 with st.sidebar:
     st.title("⚒️ CRM Tools")
     df_links = load_data("links")
+    
+    # Quick Links
     with st.expander("🔗 Danh sách Quick Links"):
-        list_links = df_links[df_links['category'] == 'Quick Link']
-        sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_links['title'].tolist(), key="sb_l")
-        if sel_l != "-- Chọn --":
-            st.markdown(f"🚀 [Mở ngay]({list_links[list_links['title'] == sel_l]['url'].values[0]})")
+        if not df_links.empty:
+            list_links = df_links[df_links['category'] == 'Quick Link']
+            if not list_links.empty:
+                sel_l = st.selectbox("Chọn Link:", ["-- Chọn --"] + list_links['title'].tolist(), key="sb_l")
+                if sel_l != "-- Chọn --":
+                    st.markdown(f"🚀 [Mở ngay]({list_links[list_links['title'] == sel_l]['url'].values[0]})")
+    
+    # Sales Kit
     with st.expander("📁 Danh sách Sales Kit"):
-        list_sk = df_links[df_links['category'] == 'Sales Kit']
-        sel_sk = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_sk['title'].tolist(), key="sb_sk")
-        if sel_sk != "-- Chọn --":
-            st.markdown(f"📂 [Xem]({list_sk[list_sk['title'] == sel_sk]['url'].values[0]})")
-    with st.expander("➕ Thêm Link / Sales Kit"):
-        with st.form("form_add_link"):
-            cat_l = st.selectbox("Loại", ["Quick Link", "Sales Kit"]); tit_l = st.text_input("Tiêu đề"); url_l = st.text_input("URL")
-            if st.form_submit_button("Lưu Link"):
-                save_data(pd.concat([df_links, pd.DataFrame([{"category":cat_l, "title":tit_l, "url":url_l}])], ignore_index=True), "links"); st.rerun()
-    st.divider()
-    with st.expander("➕ Thêm Khách Hàng Mới"):
-        with st.form("form_add_lead"):
-            f_n = st.text_input("Họ tên"); f_id = st.text_input("CRM ID"); f_c = st.text_input("Cellphone"); f_w = st.text_input("Workphone")
-            f_e = st.text_input("Email"); f_l = st.text_input("Link CRM"); f_s = st.selectbox("Status", ["New", "Contacted", "Following", "Closed"])
-            if st.form_submit_button("Lưu Lead"):
-                df_all = load_data("leads")
-                save_data(pd.concat([df_all, pd.DataFrame([{"name":f_n, "crm_id":f_id, "cell":f_c, "work":f_w, "email":f_e, "crm_link":f_l, "status":f_s, "note":""}])], ignore_index=True), "leads"); st.rerun()
+        if not df_links.empty:
+            list_sk = df_links[df_links['category'] == 'Sales Kit']
+            if not list_sk.empty:
+                sel_sk = st.selectbox("Chọn tài liệu:", ["-- Chọn --"] + list_sk['title'].tolist(), key="sb_sk")
+                if sel_sk != "-- Chọn --":
+                    st.markdown(f"📂 [Xem]({list_sk[list_sk['title'] == sel_sk]['url'].values[0]})")
 
-# --- 6. PIPELINE PROCESSING ---
+    # Add Link/Lead (Giữ nguyên form của anh)
+    with st.expander("➕ Thêm Link / Sales Kit"):
+        with st.form("f_link"):
+            c=st.selectbox("Loại",["Quick Link","Sales Kit"]); t=st.text_input("Tiêu đề"); u=st.text_input("URL")
+            if st.form_submit_button("Lưu"):
+                save_data(pd.concat([df_links, pd.DataFrame([{"category":c,"title":t,"url":u}])], ignore_index=True), "links"); st.rerun()
+    
+    with st.expander("➕ Thêm Khách Hàng Mới"):
+        with st.form("f_lead"):
+            n=st.text_input("Họ tên"); i=st.text_input("ID"); c_p=st.text_input("Cellphone"); w_p=st.text_input("Workphone")
+            em=st.text_input("Email"); l_c=st.text_input("Link CRM"); s_t=st.selectbox("Status",["New","Contacted","Following","Closed"])
+            if st.form_submit_button("Lưu Lead"):
+                df_leads_all = load_data("leads")
+                save_data(pd.concat([df_leads_all, pd.DataFrame([{"name":n,"crm_id":i,"cell":c_p,"work":w_p,"email":em,"crm_link":l_c,"status":s_t,"note":""}])], ignore_index=True), "leads"); st.rerun()
+
+# --- 6. PIPELINE ---
 st.title("💼 Pipeline Processing")
 leads_df = load_data("leads")
 c1, c2 = st.columns([7, 3])
-q = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...", placeholder="Nhập từ khóa...")
-days_filter = c2.slider("⏳ Không tương tác (ngày)", 0, 90, 90)
+q = c1.text_input("🔍 Tìm theo Tên, ID, SĐT...")
+days_f = c2.slider("⏳ Không tương tác", 0, 90, 90)
 
 if not leads_df.empty:
     filtered = leads_df[leads_df.apply(lambda r: q.lower() in str(r['name']).lower() or q.lower() in str(r['crm_id']).lower() or q.lower() in str(r['cell']).lower() or q.lower() in str(r['work']).lower(), axis=1)]
 
     for idx, row in filtered.iterrows():
         curr_h = str(row['note']) if str(row['note']) != 'nan' else ""
-        # FIX TRIỆT ĐỂ LỖI Series Object (AttributeError)
         cell = format_phone(row.get('cell', ''))
         work = format_phone(row.get('work', ''))
         
@@ -114,12 +126,12 @@ if not leads_df.empty:
 
             with cn:
                 st.markdown(f'<div class="history-container">{curr_h}</div>', unsafe_allow_html=True)
-                col_n1, col_n2 = st.columns([8.5, 1.5])
-                with col_n1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v31, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
-                with col_n2:
+                cn1, cn2 = st.columns([8.5, 1.5])
+                with cn1: st.text_input("Note nhanh...", key=f"n_{idx}", on_change=save_note_v31, args=(idx, curr_h, f"n_{idx}"), label_visibility="collapsed")
+                with cn2:
                     with st.popover("📝"):
-                        clean_history = clean_html_for_edit(curr_h)
-                        new_h = st.text_area("Sửa lịch sử", value=clean_history, height=250)
+                        cl_h = clean_html_for_edit(curr_h)
+                        new_h = st.text_area("Sửa lịch sử", value=cl_h, height=250)
                         if st.button("Lưu lại", key=f"sn_{idx}"):
                             lines = new_h.split('\n')
                             formatted_h = "".join([f"<div class='history-entry'>{line}</div>" for line in lines if line.strip()])
