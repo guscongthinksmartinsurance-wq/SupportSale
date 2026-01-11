@@ -4,14 +4,12 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
 import urllib.parse
 
-# --- 1. KẾT NỐI DATABASE CHUẨN ---
+# --- 1. KẾT NỐI DATABASE ---
 st.set_page_config(page_title="TMC CRM PRO V24.4", layout="wide")
-
-# Khởi tạo kết nối Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet):
-    # ttl=0 đảm bảo dữ liệu luôn mới nhất khi anh nhập Note
+    # ttl=0 đảm bảo dữ liệu luôn mới nhất
     return conn.read(spreadsheet=st.secrets["spreadsheet"], worksheet=worksheet, ttl=0).dropna(how='all')
 
 def save_data(df, worksheet):
@@ -32,7 +30,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIC XỬ LÝ NOTE NHANH ---
+# --- 3. LOGIC NOTE NHANH ---
 def save_note_v24(idx, current_note, note_key):
     new_txt = st.session_state[note_key]
     if new_txt and new_txt.strip():
@@ -40,7 +38,6 @@ def save_note_v24(idx, current_note, note_key):
         entry = f"<div class='history-entry'><span class='timestamp'>[{now.strftime('%m/%d %H:%M')}]</span>{new_txt}</div>"
         combined = entry + str(current_note)
         
-        # Cập nhật dữ liệu lên Google Sheet
         df_full = load_data("leads")
         df_full.at[idx, 'note'] = combined
         df_full.at[idx, 'last_interact'] = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -49,17 +46,7 @@ def save_note_v24(idx, current_note, note_key):
         st.session_state[note_key] = ""
         st.rerun()
 
-# --- 4. SIDEBAR ---
-with st.sidebar:
-    st.title("🛠️ CRM Tools")
-    try:
-        df_links = load_data("links")
-        for _, l in df_links[df_links['category'] == 'Quick Link'].iterrows():
-            st.markdown(f"**[{l['title']}]({l['url']})**")
-    except:
-        st.info("Chưa có link nhanh.")
-
-# --- 5. PIPELINE PROCESSING ---
+# --- 4. RENDER GIAO DIỆN ---
 st.title("💼 Pipeline Processing")
 try:
     leads_df = load_data("leads")
@@ -76,4 +63,4 @@ try:
                     st.text_input("Ghi chú & Enter", key=f"note_{idx}", on_change=save_note_v24, 
                                  args=(idx, curr_h, f"note_{idx}"), label_visibility="collapsed")
 except Exception as e:
-    st.error(f"Lỗi đọc dữ liệu: {e}")
+    st.error(f"Đang chờ kết nối dữ liệu chuẩn... (Lỗi: {e})")
